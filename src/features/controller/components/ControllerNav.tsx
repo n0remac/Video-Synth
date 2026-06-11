@@ -17,6 +17,12 @@ export function ControllerNav() {
       >
         Color
       </Link>
+      <Link
+        href="/audio-controller"
+        data-active={pathname === "/audio-controller"}
+      >
+        Audio
+      </Link>
       <Link href="/stage" data-active={pathname === "/stage"}>
         Stage
       </Link>

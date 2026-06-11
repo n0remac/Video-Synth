@@ -10,6 +10,7 @@ export default function HomePage() {
           <Link href="/stage">Open stage</Link>
           <Link href="/controller">Open controller</Link>
           <Link href="/color-controller">Open color</Link>
+          <Link href="/audio-controller">Open audio</Link>
         </nav>
       </section>
     </main>
