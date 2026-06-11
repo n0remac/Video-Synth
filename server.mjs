@@ -20,7 +20,19 @@ const userColors = [
   "#f7f7ff",
 ]
 
-const clientRoles = new Set(["controller", "color", "stage"])
+const clientRoles = new Set(["controller", "color", "audio", "stage"])
+
+let audioCircleSettings = {
+  sampleStartPercent: 0,
+  sampleEndPercent: 20,
+  triggerMin: 0.25,
+  triggerMax: 1,
+  gain: 1,
+  cooldownMs: 250,
+  circleColor: "#00d1ff",
+}
+
+let audioCircleSettingsUpdatedAt = now()
 
 function now() {
   return Date.now()
@@ -54,6 +66,68 @@ function isPointerMessage(message) {
     message.x <= 1 &&
     message.y >= 0 &&
     message.y <= 1
+  )
+}
+
+function isAudioCircleSettings(settings) {
+  return (
+    settings &&
+    isFiniteNumber(settings.sampleStartPercent) &&
+    isFiniteNumber(settings.sampleEndPercent) &&
+    isFiniteNumber(settings.triggerMin) &&
+    isFiniteNumber(settings.triggerMax) &&
+    isFiniteNumber(settings.gain) &&
+    isFiniteNumber(settings.cooldownMs) &&
+    typeof settings.circleColor === "string" &&
+    settings.sampleStartPercent >= 0 &&
+    settings.sampleStartPercent <= 100 &&
+    settings.sampleEndPercent >= 0 &&
+    settings.sampleEndPercent <= 100 &&
+    settings.triggerMin >= 0 &&
+    settings.triggerMin <= 1 &&
+    settings.triggerMax >= 0 &&
+    settings.triggerMax <= 1 &&
+    settings.gain >= 0.1 &&
+    settings.gain <= 6 &&
+    settings.cooldownMs >= 50 &&
+    settings.cooldownMs <= 1200
+  )
+}
+
+function isNormalized(value) {
+  return isFiniteNumber(value) && value >= 0 && value <= 1
+}
+
+function isAudioAnalysisFrame(frame) {
+  return (
+    frame &&
+    isNormalized(frame.volume) &&
+    isNormalized(frame.low) &&
+    isNormalized(frame.mid) &&
+    isNormalized(frame.high) &&
+    isFiniteNumber(frame.dominantBin) &&
+    Array.isArray(frame.spectrum) &&
+    frame.spectrum.every(isNormalized) &&
+    isFiniteNumber(frame.timestamp)
+  )
+}
+
+function isStageAudioFrameMessage(message) {
+  return (
+    message &&
+    message.type === "stage_audio_frame" &&
+    isAudioAnalysisFrame(message.frame) &&
+    isFiniteNumber(message.timestamp)
+  )
+}
+
+function isAudioSettingsUpdateMessage(message) {
+  return (
+    message &&
+    message.type === "audio_settings_update" &&
+    typeof message.userId === "string" &&
+    isAudioCircleSettings(message.settings) &&
+    isFiniteNumber(message.timestamp)
   )
 }
 
@@ -158,6 +232,14 @@ app.prepare().then(() => {
       }),
     )
 
+    socket.send(
+      JSON.stringify({
+        type: "audio_settings_snapshot",
+        settings: audioCircleSettings,
+        updatedAt: audioCircleSettingsUpdatedAt,
+      }),
+    )
+
     if (role === "controller") {
       broadcast({
         type: "user_joined",
@@ -180,6 +262,23 @@ app.prepare().then(() => {
 
       if (isPointerMessage(message)) {
         broadcast({ ...message, userId: user.id })
+        return
+      }
+
+      if (role === "stage" && isStageAudioFrameMessage(message)) {
+        broadcast({ ...message, timestamp: now() })
+        return
+      }
+
+      if (role === "audio" && isAudioSettingsUpdateMessage(message)) {
+        audioCircleSettings = message.settings
+        audioCircleSettingsUpdatedAt = now()
+        broadcast({
+          type: "audio_settings_update",
+          userId: user.id,
+          settings: audioCircleSettings,
+          timestamp: audioCircleSettingsUpdatedAt,
+        })
         return
       }
 

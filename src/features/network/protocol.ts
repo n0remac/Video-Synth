@@ -1,4 +1,9 @@
-import type { ColorControlMessage, PointerMessage } from "./protocolTypes"
+import type {
+  AudioSettingsUpdateMessage,
+  StageAudioFrameMessage,
+  ColorControlMessage,
+  PointerMessage,
+} from "./protocolTypes"
 
 export function createPointerMessage(input: PointerMessage): PointerMessage {
   return {
@@ -36,7 +41,30 @@ export function createColorControlMessage(
   }
 }
 
-export function getVisualizerSocketUrl(role?: "controller" | "color" | "stage") {
+export function createAudioSettingsUpdateMessage(
+  input: AudioSettingsUpdateMessage,
+): AudioSettingsUpdateMessage {
+  return {
+    type: "audio_settings_update",
+    userId: input.userId,
+    settings: input.settings,
+    timestamp: input.timestamp,
+  }
+}
+
+export function createStageAudioFrameMessage(
+  input: StageAudioFrameMessage,
+): StageAudioFrameMessage {
+  return {
+    type: "stage_audio_frame",
+    frame: input.frame,
+    timestamp: input.timestamp,
+  }
+}
+
+export function getVisualizerSocketUrl(
+  role?: "controller" | "color" | "audio" | "stage",
+) {
   if (typeof window === "undefined") {
     return ""
   }

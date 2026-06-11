@@ -16,6 +16,45 @@ export type PointerMessage = {
   timestamp: number
 }
 
+export type AudioCircleSettings = {
+  sampleStartPercent: number
+  sampleEndPercent: number
+  triggerMin: number
+  triggerMax: number
+  gain: number
+  cooldownMs: number
+  circleColor: string
+}
+
+export type AudioAnalysisFrame = {
+  volume: number
+  low: number
+  mid: number
+  high: number
+  dominantBin: number
+  spectrum: number[]
+  timestamp: number
+}
+
+export type StageAudioFrameMessage = {
+  type: "stage_audio_frame"
+  frame: AudioAnalysisFrame
+  timestamp: number
+}
+
+export type AudioSettingsSnapshotMessage = {
+  type: "audio_settings_snapshot"
+  settings: AudioCircleSettings
+  updatedAt: number
+}
+
+export type AudioSettingsUpdateMessage = {
+  type: "audio_settings_update"
+  userId: string
+  settings: AudioCircleSettings
+  timestamp: number
+}
+
 export type VisualizerUserSummary = {
   userId: string
   color: string
@@ -87,6 +126,9 @@ export type PatchChangedMessage = {
 
 export type VisualizerMessage =
   | PointerMessage
+  | StageAudioFrameMessage
+  | AudioSettingsSnapshotMessage
+  | AudioSettingsUpdateMessage
   | ColorControlMessage
   | UsersSnapshotMessage
   | UserJoinedMessage

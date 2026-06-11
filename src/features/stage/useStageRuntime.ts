@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react"
 import * as THREE from "three"
+import { createStageAudioFrameMessage } from "@/features/network/protocol"
 import { parseVisualizerMessage } from "@/features/network/messageValidation"
 import type { PointerMessage } from "@/features/network/protocolTypes"
+import type { AudioAnalysisFrame } from "@/features/network/protocolTypes"
 import { getVisualizerSocketUrl } from "@/features/network/protocol"
 import { stageConfig } from "./stageConfig"
 import { createCamera, resizeCameraToViewport } from "./render/createCamera"
@@ -71,13 +73,33 @@ function getPointerWorld(
 
 export function useStageRuntime() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const socketRef = useRef<WebSocket | null>(null)
   const [connectionStatus, setConnectionStatus] =
     useState<ConnectionStatus>("connecting")
+
+  function sendAudioFrame(frame: AudioAnalysisFrame) {
+    const socket = socketRef.current
+
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return
+    }
+
+    socket.send(
+      JSON.stringify(
+        createStageAudioFrameMessage({
+          type: "stage_audio_frame",
+          frame,
+          timestamp: Date.now(),
+        }),
+      ),
+    )
+  }
 
   const api = useMemo(
     () => ({
       canvasRef,
       connectionStatus,
+      sendAudioFrame,
     }),
     [connectionStatus],
   )
@@ -104,6 +126,7 @@ export function useStageRuntime() {
     let localPointerPrevious: PointerWorld | null = null
 
     const socket = new WebSocket(getVisualizerSocketUrl("stage"))
+    socketRef.current = socket
     setConnectionStatus("connecting")
 
     socket.addEventListener("open", () => {
@@ -216,6 +239,7 @@ export function useStageRuntime() {
     return () => {
       loop.stop()
       socket.close()
+      socketRef.current = null
       window.removeEventListener("resize", handleResize)
       activeCanvas.removeEventListener("pointerdown", handlePointerDown)
       activeCanvas.removeEventListener("pointermove", handlePointerMove)

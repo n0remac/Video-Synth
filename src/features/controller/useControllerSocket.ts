@@ -4,6 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { getVisualizerSocketUrl } from "@/features/network/protocol"
 import { parseVisualizerMessage } from "@/features/network/messageValidation"
 import type {
+  AudioAnalysisFrame,
+  AudioCircleSettings,
+  AudioSettingsUpdateMessage,
   ColorControlMessage,
   ClearStageMessage,
   PointerMessage,
@@ -12,12 +15,18 @@ import type {
 
 type SocketStatus = "connecting" | "connected" | "disconnected"
 
-export function useControllerSocket(role: "controller" | "color" = "controller") {
+export function useControllerSocket(
+  role: "controller" | "color" | "audio" = "controller",
+) {
   const socketRef = useRef<WebSocket | null>(null)
   const [status, setStatus] = useState<SocketStatus>("connecting")
   const [userId, setUserId] = useState("pending")
   const [assignedColor, setAssignedColor] = useState("#ff2d75")
   const [users, setUsers] = useState<VisualizerUserSummary[]>([])
+  const [audioSettings, setAudioSettings] =
+    useState<AudioCircleSettings | null>(null)
+  const [stageAudioFrame, setStageAudioFrame] =
+    useState<AudioAnalysisFrame | null>(null)
 
   useEffect(() => {
     const socket = new WebSocket(getVisualizerSocketUrl(role))
@@ -74,6 +83,18 @@ export function useControllerSocket(role: "controller" | "color" = "controller")
         setUsers(message.users)
       }
 
+      if (message?.type === "audio_settings_snapshot") {
+        setAudioSettings(message.settings)
+      }
+
+      if (message?.type === "audio_settings_update") {
+        setAudioSettings(message.settings)
+      }
+
+      if (message?.type === "stage_audio_frame") {
+        setStageAudioFrame(message.frame)
+      }
+
       if (message?.type === "user_left") {
         setUsers((currentUsers) =>
           currentUsers.filter((user) => user.userId !== message.userId),
@@ -107,6 +128,19 @@ export function useControllerSocket(role: "controller" | "color" = "controller")
     socket.send(JSON.stringify(message))
   }, [])
 
+  const sendAudioSettingsUpdate = useCallback(
+    (message: AudioSettingsUpdateMessage) => {
+      const socket = socketRef.current
+
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        return
+      }
+
+      socket.send(JSON.stringify(message))
+    },
+    [],
+  )
+
   const clearStage = useCallback(() => {
     const socket = socketRef.current
 
@@ -129,8 +163,11 @@ export function useControllerSocket(role: "controller" | "color" = "controller")
     userId,
     assignedColor,
     users,
+    audioSettings,
+    stageAudioFrame,
     sendPointer,
     sendColorControl,
+    sendAudioSettingsUpdate,
     clearStage,
   }
 }

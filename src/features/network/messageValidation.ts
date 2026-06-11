@@ -1,7 +1,10 @@
 import type {
+  AudioSettingsSnapshotMessage,
+  AudioSettingsUpdateMessage,
   ColorControlMessage,
   ClearStageMessage,
   PointerMessage,
+  StageAudioFrameMessage,
   UserJoinedMessage,
   UserLeftMessage,
   UsersSnapshotMessage,
@@ -21,6 +24,33 @@ function isNormalized(value: unknown): value is number {
   return isFiniteNumber(value) && value >= 0 && value <= 1
 }
 
+function isAudioCircleSettings(value: unknown) {
+  return (
+    isRecord(value) &&
+    isFiniteNumber(value.sampleStartPercent) &&
+    isFiniteNumber(value.sampleEndPercent) &&
+    isNormalized(value.triggerMin) &&
+    isNormalized(value.triggerMax) &&
+    isFiniteNumber(value.gain) &&
+    isFiniteNumber(value.cooldownMs) &&
+    typeof value.circleColor === "string"
+  )
+}
+
+function isAudioAnalysisFrame(value: unknown) {
+  return (
+    isRecord(value) &&
+    isNormalized(value.volume) &&
+    isNormalized(value.low) &&
+    isNormalized(value.mid) &&
+    isNormalized(value.high) &&
+    isFiniteNumber(value.dominantBin) &&
+    Array.isArray(value.spectrum) &&
+    value.spectrum.every(isNormalized) &&
+    isFiniteNumber(value.timestamp)
+  )
+}
+
 export function isPointerMessage(value: unknown): value is PointerMessage {
   return (
     isRecord(value) &&
@@ -36,6 +66,40 @@ export function isPointerMessage(value: unknown): value is PointerMessage {
     (value.visualMode === "circle" || value.visualMode === "line") &&
     isFiniteNumber(value.trailLineCount) &&
     isFiniteNumber(value.trailLength) &&
+    isFiniteNumber(value.timestamp)
+  )
+}
+
+export function isStageAudioFrameMessage(
+  value: unknown,
+): value is StageAudioFrameMessage {
+  return (
+    isRecord(value) &&
+    value.type === "stage_audio_frame" &&
+    isAudioAnalysisFrame(value.frame) &&
+    isFiniteNumber(value.timestamp)
+  )
+}
+
+export function isAudioSettingsSnapshotMessage(
+  value: unknown,
+): value is AudioSettingsSnapshotMessage {
+  return (
+    isRecord(value) &&
+    value.type === "audio_settings_snapshot" &&
+    isAudioCircleSettings(value.settings) &&
+    isFiniteNumber(value.updatedAt)
+  )
+}
+
+export function isAudioSettingsUpdateMessage(
+  value: unknown,
+): value is AudioSettingsUpdateMessage {
+  return (
+    isRecord(value) &&
+    value.type === "audio_settings_update" &&
+    typeof value.userId === "string" &&
+    isAudioCircleSettings(value.settings) &&
     isFiniteNumber(value.timestamp)
   )
 }
@@ -137,6 +201,9 @@ export function parseVisualizerMessage(
 
   if (
     isPointerMessage(value) ||
+    isStageAudioFrameMessage(value) ||
+    isAudioSettingsSnapshotMessage(value) ||
+    isAudioSettingsUpdateMessage(value) ||
     isColorControlMessage(value) ||
     isUsersSnapshotMessage(value) ||
     isUserJoinedMessage(value) ||
