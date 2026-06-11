@@ -1,0 +1,27 @@
+{
+  "name": "video-synth",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "node server.mjs",
+    "build": "next build",
+    "start": "NODE_ENV=production node server.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"src/**/*.test.js\""
+  },
+  "dependencies": {
+    "next": "^15.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "three": "^0.177.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.177.0",
+    "@types/ws": "^8.5.0",
+    "typescript": "^5.8.0"
+  }
+}
