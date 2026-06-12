@@ -73,7 +73,11 @@ export function useControllerSocket(
 
             return [
               ...currentUsers,
-              { userId: message.userId, color: message.color },
+              {
+                userId: message.userId,
+                color: message.color,
+                role: message.role === "audio" ? "audio" : "controller",
+              },
             ]
           })
         }

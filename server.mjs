@@ -25,8 +25,10 @@ const clientRoles = new Set(["controller", "color", "audio", "stage"])
 let audioCircleSettings = {
   sampleStartPercent: 0,
   sampleEndPercent: 20,
-  triggerMin: 0.25,
-  triggerMax: 1,
+  triggerMode: "manual",
+  triggerLevel: 0.25,
+  adaptiveSensitivity: 0.6,
+  adaptiveSpeed: 0.08,
   gain: 1,
   cooldownMs: 250,
   circleColor: "#00d1ff",
@@ -51,6 +53,11 @@ function isPointerMessage(message) {
     message &&
     message.type === "pointer" &&
     typeof message.userId === "string" &&
+    (message.userRole === undefined ||
+      message.userRole === "controller" ||
+      message.userRole === "color" ||
+      message.userRole === "audio" ||
+      message.userRole === "stage") &&
     isFiniteNumber(message.x) &&
     isFiniteNumber(message.y) &&
     isFiniteNumber(message.vx) &&
@@ -74,8 +81,10 @@ function isAudioCircleSettings(settings) {
     settings &&
     isFiniteNumber(settings.sampleStartPercent) &&
     isFiniteNumber(settings.sampleEndPercent) &&
-    isFiniteNumber(settings.triggerMin) &&
-    isFiniteNumber(settings.triggerMax) &&
+    (settings.triggerMode === "manual" || settings.triggerMode === "adaptive") &&
+    isFiniteNumber(settings.triggerLevel) &&
+    isFiniteNumber(settings.adaptiveSensitivity) &&
+    isFiniteNumber(settings.adaptiveSpeed) &&
     isFiniteNumber(settings.gain) &&
     isFiniteNumber(settings.cooldownMs) &&
     typeof settings.circleColor === "string" &&
@@ -83,10 +92,12 @@ function isAudioCircleSettings(settings) {
     settings.sampleStartPercent <= 100 &&
     settings.sampleEndPercent >= 0 &&
     settings.sampleEndPercent <= 100 &&
-    settings.triggerMin >= 0 &&
-    settings.triggerMin <= 1 &&
-    settings.triggerMax >= 0 &&
-    settings.triggerMax <= 1 &&
+    settings.triggerLevel >= 0 &&
+    settings.triggerLevel <= 1 &&
+    settings.adaptiveSensitivity >= 0 &&
+    settings.adaptiveSensitivity <= 1 &&
+    settings.adaptiveSpeed >= 0 &&
+    settings.adaptiveSpeed <= 1 &&
     settings.gain >= 0.1 &&
     settings.gain <= 6 &&
     settings.cooldownMs >= 50 &&
@@ -183,12 +194,13 @@ app.prepare().then(() => {
     return clientRoles.has(role) ? role : "controller"
   }
 
-  function getControllerUsers() {
+  function getTargetableUsers() {
     return Array.from(clients.values())
-      .filter((client) => client.role === "controller")
+      .filter((client) => client.role === "controller" || client.role === "audio")
       .map((client) => ({
         userId: client.id,
         color: client.color,
+        role: client.role,
       }))
   }
 
@@ -227,7 +239,7 @@ app.prepare().then(() => {
     socket.send(
       JSON.stringify({
         type: "users_snapshot",
-        users: getControllerUsers(),
+        users: getTargetableUsers(),
         timestamp: now(),
       }),
     )
@@ -240,11 +252,12 @@ app.prepare().then(() => {
       }),
     )
 
-    if (role === "controller") {
+    if (role === "controller" || role === "audio") {
       broadcast({
         type: "user_joined",
         userId: user.id,
         color: user.color,
+        role: user.role,
         timestamp: now(),
       })
     }
@@ -261,7 +274,7 @@ app.prepare().then(() => {
       user.lastSeenAt = now()
 
       if (isPointerMessage(message)) {
-        broadcast({ ...message, userId: user.id })
+        broadcast({ ...message, userId: user.id, userRole: user.role })
         return
       }
 
@@ -294,7 +307,7 @@ app.prepare().then(() => {
 
     socket.on("close", () => {
       clients.delete(socket)
-      if (role === "controller") {
+      if (role === "controller" || role === "audio") {
         broadcast({
           type: "user_left",
           userId: user.id,

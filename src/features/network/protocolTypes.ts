@@ -1,8 +1,11 @@
 import type { PatchDefinition } from "@/features/stage/patches/patchTypes"
 
+export type VisualizerClientRole = "controller" | "color" | "audio" | "stage"
+
 export type PointerMessage = {
   type: "pointer"
   userId: string
+  userRole?: VisualizerClientRole
   x: number
   y: number
   vx: number
@@ -16,11 +19,15 @@ export type PointerMessage = {
   timestamp: number
 }
 
+export type AudioTriggerMode = "manual" | "adaptive"
+
 export type AudioCircleSettings = {
   sampleStartPercent: number
   sampleEndPercent: number
-  triggerMin: number
-  triggerMax: number
+  triggerMode: AudioTriggerMode
+  triggerLevel: number
+  adaptiveSensitivity: number
+  adaptiveSpeed: number
   gain: number
   cooldownMs: number
   circleColor: string
@@ -58,6 +65,7 @@ export type AudioSettingsUpdateMessage = {
 export type VisualizerUserSummary = {
   userId: string
   color: string
+  role: "controller" | "audio"
 }
 
 export type ColorControlSource = "touch"
@@ -94,6 +102,7 @@ export type UserJoinedMessage = {
   type: "user_joined"
   userId: string
   color: string
+  role?: VisualizerClientRole
   timestamp: number
 }
 

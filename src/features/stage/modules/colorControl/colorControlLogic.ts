@@ -184,9 +184,10 @@ export function resolveDrawColor(
   state: ColorControlState,
   userId: string,
   fallbackColor: string,
+  userRole = "controller",
 ) {
   const userOverride = state.userDrawColors[userId] ?? null
-  const globalOverride = state.globalDrawColor
+  const globalOverride = userRole === "audio" ? null : state.globalDrawColor
 
   if (userOverride && globalOverride) {
     return userOverride.timestamp >= globalOverride.timestamp

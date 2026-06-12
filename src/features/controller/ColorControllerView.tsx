@@ -199,7 +199,9 @@ export function ColorControllerView() {
                 className="user-color-dot"
                 style={{ backgroundColor: user.color }}
               />
-              <span>{user.userId}</span>
+              <span>
+                {user.role === "audio" ? "Spectrum" : "User"} {user.userId}
+              </span>
             </button>
           ))}
           {socket.users.length === 0 ? (

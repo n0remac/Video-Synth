@@ -367,7 +367,7 @@ canvas {
 
 .audio-control-panel {
   display: grid;
-  grid-template-columns: auto repeat(5, minmax(96px, 1fr));
+  grid-template-columns: auto repeat(7, minmax(90px, 1fr));
   gap: 12px;
   align-items: end;
 }
@@ -400,7 +400,7 @@ canvas {
 
 .audio-simple-panel {
   display: grid;
-  grid-template-columns: minmax(120px, 0.8fr) repeat(6, minmax(130px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 12px;
   align-items: end;
 }

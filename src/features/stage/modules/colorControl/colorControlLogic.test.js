@@ -59,3 +59,13 @@ test("resolves selected user, all, and background targets", () => {
   assert.notEqual(resolveDrawColor(backgroundState, "user-b", "#ffffff"), "#ffffff")
   assert.notEqual(resolveBackgroundColor(backgroundState, "#000000"), "#000000")
 })
+
+test("global draw color does not override audio sources", () => {
+  const state = receiveColorControl(
+    emptyColorControlState,
+    createInput({ target: "all", userId: "color-controller", x: 0.5, y: 0 }),
+  )
+
+  assert.notEqual(resolveDrawColor(state, "user-a", "#ffffff", "controller"), "#ffffff")
+  assert.equal(resolveDrawColor(state, "audio-a", "#00d1ff", "audio"), "#00d1ff")
+})

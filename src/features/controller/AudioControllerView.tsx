@@ -10,9 +10,11 @@ import { ColorPicker } from "./components/ColorPicker"
 import { ControlSlider } from "./components/ControlSlider"
 import { ControllerNav } from "./components/ControllerNav"
 import {
-  isInTriggerRange,
+  isAboveTriggerLevel,
   sampleSpectrumRange,
+  updateAdaptiveTriggerState,
 } from "./audioRoutingLogic"
+import type { AdaptiveTriggerState } from "./audioRoutingLogic"
 import { useControllerSocket } from "./useControllerSocket"
 
 function clamp(value: number, min: number, max: number) {
@@ -26,8 +28,10 @@ function formatPercent(value: number | undefined) {
 const defaultAudioSettings: AudioCircleSettings = {
   sampleStartPercent: 0,
   sampleEndPercent: 20,
-  triggerMin: 0.25,
-  triggerMax: 1,
+  triggerMode: "manual",
+  triggerLevel: 0.25,
+  adaptiveSensitivity: 0.6,
+  adaptiveSpeed: 0.08,
   gain: 1,
   cooldownMs: 250,
   circleColor: "#00d1ff",
@@ -37,17 +41,38 @@ export function AudioControllerView() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const previousInsideRef = useRef(false)
   const lastTriggeredAtRef = useRef(0)
+  const adaptiveTriggerRef = useRef<AdaptiveTriggerState | null>(null)
   const socket = useControllerSocket("audio")
   const stageAudioFrame = socket.stageAudioFrame
   const [settings, setSettings] =
     useState<AudioCircleSettings>(defaultAudioSettings)
+  const [adaptiveTriggerState, setAdaptiveTriggerState] =
+    useState<AdaptiveTriggerState | null>(null)
+  const [rawSampleValue, setRawSampleValue] = useState(0)
   const [sampleValue, setSampleValue] = useState(0)
+  const displayedTriggerLevel =
+    settings.triggerMode === "adaptive" && adaptiveTriggerState
+      ? adaptiveTriggerState.triggerLevel
+      : settings.triggerLevel
 
   useEffect(() => {
     if (socket.audioSettings) {
       setSettings(socket.audioSettings)
     }
   }, [socket.audioSettings])
+
+  useEffect(() => {
+    adaptiveTriggerRef.current = null
+    setAdaptiveTriggerState(null)
+    previousInsideRef.current = false
+  }, [
+    settings.adaptiveSpeed,
+    settings.adaptiveSensitivity,
+    settings.gain,
+    settings.sampleEndPercent,
+    settings.sampleStartPercent,
+    settings.triggerMode,
+  ])
 
   function updateSettings(patch: Partial<AudioCircleSettings>) {
     setSettings((currentSettings) => {
@@ -103,9 +128,43 @@ export function AudioControllerView() {
       Math.min(settings.sampleStartPercent, settings.sampleEndPercent) / 100
     const rangeEnd =
       Math.max(settings.sampleStartPercent, settings.sampleEndPercent) / 100
+    const rawSample = sampleSpectrumRange(
+      spectrum,
+      settings.sampleStartPercent,
+      settings.sampleEndPercent,
+    )
+    const signalValue = clamp(rawSample * settings.gain, 0, 1)
+    const effectiveTriggerLevel =
+      settings.triggerMode === "adaptive" && adaptiveTriggerState
+        ? adaptiveTriggerState.triggerLevel
+        : settings.triggerLevel
+    const isTriggered = isAboveTriggerLevel(signalValue, effectiveTriggerLevel)
+    const visualRangeWidth = Math.max((rangeEnd - rangeStart) * width, 2)
+    const rangeX = clamp(rangeStart * width, 0, Math.max(width - visualRangeWidth, 0))
 
-    context.fillStyle = "rgba(0, 209, 255, 0.12)"
-    context.fillRect(rangeStart * width, 0, (rangeEnd - rangeStart) * width, height)
+    context.fillStyle = isTriggered
+      ? "rgba(255, 225, 86, 0.16)"
+      : "rgba(0, 209, 255, 0.12)"
+    context.fillRect(
+      rangeX,
+      0,
+      visualRangeWidth,
+      height,
+    )
+
+    const triggerY = height * (1 - clamp(effectiveTriggerLevel, 0, 1))
+    const signalY = height * (1 - signalValue)
+
+    context.fillStyle = "rgba(255, 225, 86, 0.08)"
+    context.fillRect(rangeX, 0, visualRangeWidth, triggerY)
+
+    if (settings.triggerMode === "adaptive" && adaptiveTriggerState) {
+      const floorY = height * (1 - adaptiveTriggerState.floor)
+      const ceilingY = height * (1 - adaptiveTriggerState.ceiling)
+
+      context.fillStyle = "rgba(247, 247, 255, 0.08)"
+      context.fillRect(rangeX, ceilingY, visualRangeWidth, floorY - ceilingY)
+    }
 
     spectrum.forEach((value, index) => {
       const x = index * (barWidth + gap)
@@ -115,7 +174,65 @@ export function AudioControllerView() {
       context.fillStyle = `hsl(${hue}, 95%, ${42 + value * 30}%)`
       context.fillRect(x, height - barHeight, barWidth, barHeight)
     })
-  }, [stageAudioFrame, settings.sampleEndPercent, settings.sampleStartPercent])
+
+    context.fillStyle = isTriggered
+      ? "rgba(60, 255, 158, 0.24)"
+      : "rgba(0, 209, 255, 0.2)"
+    context.fillRect(rangeX, signalY, visualRangeWidth, height - signalY)
+
+    context.strokeStyle = "#ffe156"
+    context.lineWidth = 2
+    context.beginPath()
+    context.moveTo(0, triggerY)
+    context.lineTo(width, triggerY)
+    context.stroke()
+
+    if (settings.triggerMode === "adaptive" && adaptiveTriggerState) {
+      const floorY = height * (1 - adaptiveTriggerState.floor)
+      const ceilingY = height * (1 - adaptiveTriggerState.ceiling)
+
+      context.strokeStyle = "rgba(247, 247, 255, 0.38)"
+      context.lineWidth = 1
+      context.beginPath()
+      context.moveTo(rangeX, ceilingY)
+      context.lineTo(rangeX + visualRangeWidth, ceilingY)
+      context.moveTo(rangeX, floorY)
+      context.lineTo(rangeX + visualRangeWidth, floorY)
+      context.stroke()
+    }
+
+    context.strokeStyle = "#f7f7ff"
+    context.lineWidth = 2
+    context.beginPath()
+    context.moveTo(rangeX, signalY)
+    context.lineTo(rangeX + visualRangeWidth, signalY)
+    context.stroke()
+
+    const badgeText = `Signal ${formatPercent(signalValue)}`
+    context.font = "700 12px sans-serif"
+    const badgePaddingX = 8
+    const badgeHeight = 24
+    const badgeWidth = context.measureText(badgeText).width + badgePaddingX * 2
+    const badgeX = clamp(
+      rangeX + visualRangeWidth - badgeWidth - 6,
+      6,
+      Math.max(6, width - badgeWidth - 6),
+    )
+    const badgeY = clamp(signalY - badgeHeight - 6, 6, height - badgeHeight - 6)
+
+    context.fillStyle = "rgba(5, 5, 5, 0.78)"
+    context.fillRect(badgeX, badgeY, badgeWidth, badgeHeight)
+    context.fillStyle = "#f7f7ff"
+    context.fillText(badgeText, badgeX + badgePaddingX, badgeY + 16)
+  }, [
+    stageAudioFrame,
+    adaptiveTriggerState,
+    settings.gain,
+    settings.triggerMode,
+    settings.sampleEndPercent,
+    settings.sampleStartPercent,
+    settings.triggerLevel,
+  ])
 
   useEffect(() => {
     const spectrum = stageAudioFrame?.spectrum
@@ -124,22 +241,33 @@ export function AudioControllerView() {
       return
     }
 
-    const nextSampleValue = clamp(
-      sampleSpectrumRange(
-        spectrum,
-        settings.sampleStartPercent,
-        settings.sampleEndPercent,
-      ) * settings.gain,
-      0,
-      1,
+    const nextRawSampleValue = sampleSpectrumRange(
+      spectrum,
+      settings.sampleStartPercent,
+      settings.sampleEndPercent,
     )
-    const inside = isInTriggerRange(
-      nextSampleValue,
-      settings.triggerMin,
-      settings.triggerMax,
-    )
+    const nextSampleValue = clamp(nextRawSampleValue * settings.gain, 0, 1)
+    let nextTriggerLevel = settings.triggerLevel
+
+    if (settings.triggerMode === "adaptive") {
+      const nextAdaptiveTriggerState = updateAdaptiveTriggerState(
+        adaptiveTriggerRef.current,
+        nextSampleValue,
+        {
+          sensitivity: settings.adaptiveSensitivity,
+          adaptSpeed: settings.adaptiveSpeed,
+        },
+      )
+
+      adaptiveTriggerRef.current = nextAdaptiveTriggerState
+      setAdaptiveTriggerState(nextAdaptiveTriggerState)
+      nextTriggerLevel = nextAdaptiveTriggerState.triggerLevel
+    }
+
+    const inside = isAboveTriggerLevel(nextSampleValue, nextTriggerLevel)
     const now = Date.now()
 
+    setRawSampleValue(nextRawSampleValue)
     setSampleValue(nextSampleValue)
 
     if (
@@ -200,8 +328,16 @@ export function AudioControllerView() {
           <strong>{stageAudioFrame ? "Stage" : "None"}</strong>
         </div>
         <div className="audio-meter">
-          <span>Sample</span>
+          <span>Raw Avg</span>
+          <strong>{formatPercent(rawSampleValue)}</strong>
+        </div>
+        <div className="audio-meter">
+          <span>Signal</span>
           <strong>{formatPercent(sampleValue)}</strong>
+        </div>
+        <div className="audio-meter">
+          <span>Trigger</span>
+          <strong>{formatPercent(displayedTriggerLevel)}</strong>
         </div>
         <div className="audio-meter">
           <span>Volume</span>
@@ -246,22 +382,60 @@ export function AudioControllerView() {
             updateSettings({ sampleEndPercent })
           }
         />
-        <ControlSlider
-          label="Trigger Min"
-          value={settings.triggerMin}
-          min={0}
-          max={1}
-          step={0.01}
-          onValueChange={(triggerMin) => updateSettings({ triggerMin })}
-        />
-        <ControlSlider
-          label="Trigger Max"
-          value={settings.triggerMax}
-          min={0}
-          max={1}
-          step={0.01}
-          onValueChange={(triggerMax) => updateSettings({ triggerMax })}
-        />
+        <div className="control-field">
+          <span>
+            Trigger Mode <strong>{settings.triggerMode}</strong>
+          </span>
+          <div className="mode-toggle">
+            <button
+              type="button"
+              data-active={settings.triggerMode === "manual"}
+              onClick={() => updateSettings({ triggerMode: "manual" })}
+            >
+              Manual
+            </button>
+            <button
+              type="button"
+              data-active={settings.triggerMode === "adaptive"}
+              onClick={() => updateSettings({ triggerMode: "adaptive" })}
+            >
+              Adaptive
+            </button>
+          </div>
+        </div>
+        {settings.triggerMode === "manual" ? (
+          <ControlSlider
+            label="Trigger Level"
+            value={settings.triggerLevel}
+            min={0}
+            max={1}
+            step={0.01}
+            onValueChange={(triggerLevel) => updateSettings({ triggerLevel })}
+          />
+        ) : (
+          <>
+            <ControlSlider
+              label="Sensitivity"
+              value={settings.adaptiveSensitivity}
+              min={0.1}
+              max={0.9}
+              step={0.01}
+              onValueChange={(adaptiveSensitivity) =>
+                updateSettings({ adaptiveSensitivity })
+              }
+            />
+            <ControlSlider
+              label="Adapt Speed"
+              value={settings.adaptiveSpeed}
+              min={0.01}
+              max={0.4}
+              step={0.01}
+              onValueChange={(adaptiveSpeed) =>
+                updateSettings({ adaptiveSpeed })
+              }
+            />
+          </>
+        )}
         <ControlSlider
           label="Gain"
           value={settings.gain}

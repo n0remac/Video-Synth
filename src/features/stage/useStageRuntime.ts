@@ -153,12 +153,20 @@ export function useStageRuntime() {
         message.visualMode === "circle" &&
         message.down
       ) {
-        const color = colorControl.resolveDrawColor(message.userId, message.color)
+        const color = colorControl.resolveDrawColor(
+          message.userId,
+          message.color,
+          message.userRole,
+        )
         ripplePaint.receiveInput(messageToRippleInput(message, world, color))
       }
 
       if (message.type === "pointer" && message.visualMode === "line") {
-        const color = colorControl.resolveDrawColor(message.userId, message.color)
+        const color = colorControl.resolveDrawColor(
+          message.userId,
+          message.color,
+          message.userRole,
+        )
         trailPaint.receiveInput(messageToTrailInput(message, world, color))
       }
 

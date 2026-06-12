@@ -29,8 +29,10 @@ function isAudioCircleSettings(value: unknown) {
     isRecord(value) &&
     isFiniteNumber(value.sampleStartPercent) &&
     isFiniteNumber(value.sampleEndPercent) &&
-    isNormalized(value.triggerMin) &&
-    isNormalized(value.triggerMax) &&
+    (value.triggerMode === "manual" || value.triggerMode === "adaptive") &&
+    isNormalized(value.triggerLevel) &&
+    isNormalized(value.adaptiveSensitivity) &&
+    isNormalized(value.adaptiveSpeed) &&
     isFiniteNumber(value.gain) &&
     isFiniteNumber(value.cooldownMs) &&
     typeof value.circleColor === "string"
@@ -56,6 +58,11 @@ export function isPointerMessage(value: unknown): value is PointerMessage {
     isRecord(value) &&
     value.type === "pointer" &&
     typeof value.userId === "string" &&
+    (value.userRole === undefined ||
+      value.userRole === "controller" ||
+      value.userRole === "color" ||
+      value.userRole === "audio" ||
+      value.userRole === "stage") &&
     isNormalized(value.x) &&
     isNormalized(value.y) &&
     isFiniteNumber(value.vx) &&
@@ -141,7 +148,8 @@ export function isUsersSnapshotMessage(
       (user) =>
         isRecord(user) &&
         typeof user.userId === "string" &&
-        typeof user.color === "string",
+        typeof user.color === "string" &&
+        (user.role === "controller" || user.role === "audio"),
     ) &&
     isFiniteNumber(value.timestamp)
   )
@@ -153,6 +161,11 @@ export function isUserJoinedMessage(value: unknown): value is UserJoinedMessage 
     value.type === "user_joined" &&
     typeof value.userId === "string" &&
     typeof value.color === "string" &&
+    (value.role === undefined ||
+      value.role === "controller" ||
+      value.role === "color" ||
+      value.role === "audio" ||
+      value.role === "stage") &&
     isFiniteNumber(value.timestamp)
   )
 }

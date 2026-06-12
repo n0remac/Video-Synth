@@ -16,8 +16,8 @@ export class ColorControlModule {
     this.state = receiveColorControl(this.state, input)
   }
 
-  resolveDrawColor(userId: string, fallbackColor: string) {
-    return resolveDrawColor(this.state, userId, fallbackColor)
+  resolveDrawColor(userId: string, fallbackColor: string, userRole?: string) {
+    return resolveDrawColor(this.state, userId, fallbackColor, userRole)
   }
 
   resolveBackgroundColor(fallbackColor: string) {

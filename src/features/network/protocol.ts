@@ -9,6 +9,7 @@ export function createPointerMessage(input: PointerMessage): PointerMessage {
   return {
     type: "pointer",
     userId: input.userId,
+    userRole: input.userRole,
     x: input.x,
     y: input.y,
     vx: input.vx,
