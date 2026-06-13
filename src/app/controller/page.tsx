@@ -1,5 +1,5 @@
-import { ControllerView } from "@/features/controller/ControllerView"
+import { DrawControllerView } from "@/features/controller/draw/DrawControllerView"
 
 export default function ControllerPage() {
-  return <ControllerView />
+  return <DrawControllerView />
 }

@@ -1,15 +1,15 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { ColorPicker } from "./components/ColorPicker"
-import { ControlSlider } from "./components/ControlSlider"
-import { ControllerNav } from "./components/ControllerNav"
-import { TouchPad } from "./components/TouchPad"
-import { useControllerSocket } from "./useControllerSocket"
+import { ColorPicker } from "../shared/ColorPicker"
+import { ControlSlider } from "../shared/ControlSlider"
+import { ControllerNav } from "../shared/ControllerNav"
+import { TouchPad } from "../shared/TouchPad"
+import { useVisualizerSocket } from "../shared/useVisualizerSocket"
 import { usePointerController } from "./usePointerController"
 
-export function ControllerView() {
-  const socket = useControllerSocket("controller")
+export function DrawControllerView() {
+  const socket = useVisualizerSocket("controller")
   const [visualMode, setVisualMode] = useState<"circle" | "line">("circle")
   const [color, setColor] = useState(socket.assignedColor)
   const [intensity, setIntensity] = useState(0.65)

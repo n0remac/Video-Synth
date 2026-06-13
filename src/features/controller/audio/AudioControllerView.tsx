@@ -6,16 +6,16 @@ import {
   createPointerMessage,
 } from "@/features/network/protocol"
 import type { AudioCircleSettings } from "@/features/network/protocolTypes"
-import { ColorPicker } from "./components/ColorPicker"
-import { ControlSlider } from "./components/ControlSlider"
-import { ControllerNav } from "./components/ControllerNav"
+import { ColorPicker } from "../shared/ColorPicker"
+import { ControlSlider } from "../shared/ControlSlider"
+import { ControllerNav } from "../shared/ControllerNav"
 import {
   isAboveTriggerLevel,
   sampleSpectrumRange,
   updateAdaptiveTriggerState,
 } from "./audioRoutingLogic"
 import type { AdaptiveTriggerState } from "./audioRoutingLogic"
-import { useControllerSocket } from "./useControllerSocket"
+import { useVisualizerSocket } from "../shared/useVisualizerSocket"
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max)
@@ -42,7 +42,7 @@ export function AudioControllerView() {
   const previousInsideRef = useRef(false)
   const lastTriggeredAtRef = useRef(0)
   const adaptiveTriggerRef = useRef<AdaptiveTriggerState | null>(null)
-  const socket = useControllerSocket("audio")
+  const socket = useVisualizerSocket("audio")
   const stageAudioFrame = socket.stageAudioFrame
   const [settings, setSettings] =
     useState<AudioCircleSettings>(defaultAudioSettings)

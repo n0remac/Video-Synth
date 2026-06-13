@@ -7,11 +7,11 @@ import type {
   ColorControlMappingPreset,
   ColorControlTarget,
 } from "@/features/network/protocolTypes"
-import { ColorPicker } from "./components/ColorPicker"
-import { ControlSlider } from "./components/ControlSlider"
-import { ControllerNav } from "./components/ControllerNav"
-import { TouchPad } from "./components/TouchPad"
-import { useControllerSocket } from "./useControllerSocket"
+import { ColorPicker } from "../shared/ColorPicker"
+import { ControlSlider } from "../shared/ControlSlider"
+import { ControllerNav } from "../shared/ControllerNav"
+import { TouchPad } from "../shared/TouchPad"
+import { useVisualizerSocket } from "../shared/useVisualizerSocket"
 
 type ColorTargetOption = ColorControlTarget
 
@@ -36,7 +36,7 @@ function getNormalizedPointer(element: HTMLElement, event: PointerEvent<HTMLElem
 }
 
 export function ColorControllerView() {
-  const socket = useControllerSocket("color")
+  const socket = useVisualizerSocket("color")
   const [pointerDown, setPointerDown] = useState(false)
   const [baseColor, setBaseColor] = useState("#ff2d75")
   const [colorMapping, setColorMapping] =

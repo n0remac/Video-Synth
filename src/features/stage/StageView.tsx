@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef } from "react"
-import { useAudioAnalyser } from "@/features/controller/useAudioAnalyser"
+import { useAudioAnalyser } from "@/features/audio/useAudioAnalyser"
 import { useStageRuntime } from "./useStageRuntime"
 
 export function StageView() {

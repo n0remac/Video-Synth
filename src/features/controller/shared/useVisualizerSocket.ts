@@ -15,7 +15,7 @@ import type {
 
 type SocketStatus = "connecting" | "connected" | "disconnected"
 
-export function useControllerSocket(
+export function useVisualizerSocket(
   role: "controller" | "color" | "audio" = "controller",
 ) {
   const socketRef = useRef<WebSocket | null>(null)
