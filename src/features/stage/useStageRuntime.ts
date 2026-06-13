@@ -241,6 +241,9 @@ export function useStageRuntime() {
       ripplePaint.update(dt)
       trailPaint.update(dt)
       colorControl.update()
+      scene.background = new THREE.Color(
+        colorControl.resolveBackgroundColor(stageConfig.backgroundColor),
+      )
       renderer.render(scene, camera)
     })
 

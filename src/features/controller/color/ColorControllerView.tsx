@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import type { PointerEvent } from "react"
 import { createColorControlMessage } from "@/features/network/protocol"
 import type {
@@ -37,6 +37,7 @@ function getNormalizedPointer(element: HTMLElement, event: PointerEvent<HTMLElem
 
 export function ColorControllerView() {
   const socket = useVisualizerSocket("color")
+  const lastPointerRef = useRef<{ x: number; y: number } | null>(null)
   const [pointerDown, setPointerDown] = useState(false)
   const [baseColor, setBaseColor] = useState("#ff2d75")
   const [colorMapping, setColorMapping] =
@@ -90,11 +91,28 @@ export function ColorControllerView() {
     ],
   )
 
+  useEffect(() => {
+    if (!pointerDown) {
+      return
+    }
+
+    const intervalId = window.setInterval(() => {
+      const pointer = lastPointerRef.current
+
+      if (pointer) {
+        sendColorControl(pointer.x, pointer.y)
+      }
+    }, 150)
+
+    return () => window.clearInterval(intervalId)
+  }, [pointerDown, sendColorControl])
+
   const handlers = {
     onPointerDown(event: PointerEvent<HTMLElement>) {
       event.currentTarget.setPointerCapture(event.pointerId)
       setPointerDown(true)
       const pointer = getNormalizedPointer(event.currentTarget, event)
+      lastPointerRef.current = pointer
       sendColorControl(pointer.x, pointer.y)
     },
     onPointerMove(event: PointerEvent<HTMLElement>) {
@@ -103,16 +121,19 @@ export function ColorControllerView() {
       }
 
       const pointer = getNormalizedPointer(event.currentTarget, event)
+      lastPointerRef.current = pointer
       sendColorControl(pointer.x, pointer.y)
     },
     onPointerUp(event: PointerEvent<HTMLElement>) {
       setPointerDown(false)
+      lastPointerRef.current = null
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId)
       }
     },
     onPointerCancel(event: PointerEvent<HTMLElement>) {
       setPointerDown(false)
+      lastPointerRef.current = null
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
         event.currentTarget.releasePointerCapture(event.pointerId)
       }

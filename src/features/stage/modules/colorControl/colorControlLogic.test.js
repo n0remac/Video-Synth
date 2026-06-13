@@ -3,6 +3,7 @@ import { test } from "node:test"
 import {
   applyColorControl,
   emptyColorControlState,
+  pruneExpiredColorControls,
   receiveColorControl,
   resolveBackgroundColor,
   resolveDrawColor,
@@ -68,4 +69,43 @@ test("global draw color does not override audio sources", () => {
 
   assert.notEqual(resolveDrawColor(state, "user-a", "#ffffff", "controller"), "#ffffff")
   assert.equal(resolveDrawColor(state, "audio-a", "#00d1ff", "audio"), "#00d1ff")
+})
+
+test("color controls expire back to fallback colors when input stops", () => {
+  const state = receiveColorControl(
+    emptyColorControlState,
+    createInput({
+      target: "user",
+      targetUserId: "user-a",
+      userId: "color-controller",
+      x: 0.5,
+      y: 0,
+      timestamp: 1000,
+    }),
+  )
+
+  const activeState = pruneExpiredColorControls(state, 1300, 500)
+  const expiredState = pruneExpiredColorControls(state, 1600, 500)
+
+  assert.notEqual(resolveDrawColor(activeState, "user-a", "#ffffff"), "#ffffff")
+  assert.equal(resolveDrawColor(expiredState, "user-a", "#ffffff"), "#ffffff")
+})
+
+test("background controls expire back to the default background", () => {
+  const state = receiveColorControl(
+    emptyColorControlState,
+    createInput({
+      target: "background",
+      userId: "color-controller",
+      x: 0.5,
+      y: 0,
+      timestamp: 1000,
+    }),
+  )
+
+  const activeState = pruneExpiredColorControls(state, 1300, 500)
+  const expiredState = pruneExpiredColorControls(state, 1600, 500)
+
+  assert.notEqual(resolveBackgroundColor(activeState, "#000000"), "#000000")
+  assert.equal(resolveBackgroundColor(expiredState, "#000000"), "#000000")
 })

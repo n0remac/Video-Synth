@@ -11,6 +11,7 @@ export default function HomePage() {
           <Link href="/controller">Open controller</Link>
           <Link href="/color-controller">Open color</Link>
           <Link href="/audio-controller">Open audio</Link>
+          <Link href="/shape-generator">Open shapes</Link>
         </nav>
       </section>
     </main>

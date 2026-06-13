@@ -10,6 +10,8 @@ export const emptyColorControlState: ColorControlState = {
   userDrawColors: {},
 }
 
+export const colorControlActiveTimeoutMs = 500
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
@@ -177,6 +179,36 @@ export function receiveColorControl(
       ...state.userDrawColors,
       [input.targetUserId]: override,
     },
+  }
+}
+
+function isOverrideActive(
+  override: { timestamp: number } | null,
+  now: number,
+  activeTimeoutMs: number,
+) {
+  return override !== null && now - override.timestamp <= activeTimeoutMs
+}
+
+export function pruneExpiredColorControls(
+  state: ColorControlState,
+  now: number,
+  activeTimeoutMs = colorControlActiveTimeoutMs,
+): ColorControlState {
+  const userDrawColors = Object.fromEntries(
+    Object.entries(state.userDrawColors).filter(([, override]) =>
+      isOverrideActive(override, now, activeTimeoutMs),
+    ),
+  )
+
+  return {
+    globalDrawColor: isOverrideActive(state.globalDrawColor, now, activeTimeoutMs)
+      ? state.globalDrawColor
+      : null,
+    backgroundColor: isOverrideActive(state.backgroundColor, now, activeTimeoutMs)
+      ? state.backgroundColor
+      : null,
+    userDrawColors,
   }
 }
 

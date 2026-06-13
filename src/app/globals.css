@@ -154,6 +154,70 @@ canvas {
   text-transform: uppercase;
 }
 
+.shape-generator-shell {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    #050608;
+  background-size: 42px 42px;
+}
+
+.shape-generator-canvas {
+  width: 100vw;
+  height: 100vh;
+  touch-action: none;
+}
+
+.shape-generator-header {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.shape-generator-header h1 {
+  margin: 0;
+  font-size: clamp(1.75rem, 4vw, 3rem);
+  line-height: 1;
+}
+
+.shape-control-panel {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 12px;
+  align-items: end;
+  max-height: min(50vh, 360px);
+  overflow-y: auto;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(7, 9, 12, 0.78);
+  backdrop-filter: blur(14px);
+}
+
+@media (max-width: 1080px) {
+  .shape-control-panel {
+    grid-template-columns: repeat(4, minmax(120px, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .shape-control-panel {
+    grid-template-columns: repeat(3, minmax(120px, 1fr));
+  }
+}
+
 .controller-shell {
   min-height: 100vh;
   min-height: 100dvh;
@@ -548,5 +612,10 @@ canvas {
 
   .audio-simple-panel {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .shape-control-panel {
+    grid-template-columns: 1fr 1fr;
+    max-height: min(58vh, 420px);
   }
 }

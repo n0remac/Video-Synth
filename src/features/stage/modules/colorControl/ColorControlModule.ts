@@ -1,6 +1,7 @@
 import type { ColorControlMessage } from "@/features/network/protocolTypes"
 import {
   emptyColorControlState,
+  pruneExpiredColorControls,
   receiveColorControl,
   resolveBackgroundColor,
   resolveDrawColor,
@@ -24,7 +25,9 @@ export class ColorControlModule {
     return resolveBackgroundColor(this.state, fallbackColor)
   }
 
-  update() {}
+  update(now = Date.now()) {
+    this.state = pruneExpiredColorControls(this.state, now)
+  }
 
   dispose() {}
 }
