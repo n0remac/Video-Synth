@@ -6,6 +6,12 @@ import { ControlSlider } from "@/features/controller/shared/ControlSlider"
 
 type ShapeMode = "2d" | "3d"
 
+type ShapeFamily =
+  | "prism"
+  | "pyramid"
+  | "sphere"
+  | "polyhedron"
+
 type ShapeParameters = {
   angleBias: number
   bevel: number
@@ -24,6 +30,15 @@ type SceneHandle = {
   render(): void
 }
 
+const shapeFamilyOptions: Array<{ label: string; value: ShapeFamily }> = [
+  { label: "Prism", value: "prism" },
+  { label: "Pyramid", value: "pyramid" },
+  { label: "Sphere", value: "sphere" },
+  { label: "Polyhedron", value: "polyhedron" },
+]
+
+const polyhedronSideCounts = [4, 6, 8, 12, 20]
+
 type DisposableObject = THREE.Object3D & {
   geometry?: THREE.BufferGeometry
   material?: THREE.Material | THREE.Material[]
@@ -35,6 +50,15 @@ function toRadians(degrees: number): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
+}
+
+function getNearestPolyhedronSideCount(value: number): number {
+  return polyhedronSideCounts.reduce((nearest, option) => {
+    const nearestDistance = Math.abs(nearest - value)
+    const optionDistance = Math.abs(option - value)
+
+    return optionDistance < nearestDistance ? option : nearest
+  }, polyhedronSideCounts[0])
 }
 
 function createAngleSteps(sides: number, angleBias: number): number[] {
@@ -135,6 +159,43 @@ function clearGroup(group: THREE.Group) {
   })
 }
 
+function createSolidShape(
+  geometry: THREE.BufferGeometry,
+  {
+    color = 0x3cff9e,
+    edgeStyle = "edges",
+  }: {
+    color?: number
+    edgeStyle?: "edges" | "wire"
+  } = {},
+): THREE.Object3D {
+  const group = new THREE.Group()
+  const mesh = new THREE.Mesh(
+    geometry,
+    new THREE.MeshStandardMaterial({
+      color,
+      metalness: 0.18,
+      roughness: 0.48,
+    }),
+  )
+  const edgeGeometry =
+    edgeStyle === "wire"
+      ? new THREE.WireframeGeometry(geometry)
+      : new THREE.EdgesGeometry(geometry, 20)
+  const edges = new THREE.LineSegments(
+    edgeGeometry,
+    new THREE.LineBasicMaterial({
+      color: 0xffffff,
+      transparent: true,
+      opacity: edgeStyle === "wire" ? 0.38 : 0.62,
+    }),
+  )
+
+  group.add(mesh, edges)
+
+  return group
+}
+
 function create2DShape({
   angleBias,
   sideVariation,
@@ -204,7 +265,86 @@ function applyTaperAndTwist(
   position.needsUpdate = true
 }
 
-function create3DShape({
+function applyCenteredDepthTaperAndTwist(
+  geometry: THREE.BufferGeometry,
+  depth: number,
+  taper: number,
+  twist: number,
+) {
+  const position = geometry.getAttribute("position")
+  const zScale = depth / 1.1
+
+  for (let index = 0; index < position.count; index += 1) {
+    position.setZ(index, position.getZ(index) * zScale)
+  }
+
+  geometry.computeBoundingBox()
+
+  const bounds = geometry.boundingBox
+
+  if (!bounds) {
+    return
+  }
+
+  const span = Math.max(bounds.max.z - bounds.min.z, 0.001)
+  const twistRadians = toRadians(twist)
+
+  for (let index = 0; index < position.count; index += 1) {
+    const x = position.getX(index)
+    const y = position.getY(index)
+    const z = position.getZ(index)
+    const progress = clamp((z - bounds.min.z) / span, 0, 1)
+    const scale = 1 + (taper - 1) * progress
+    const angle = twistRadians * progress
+    const scaledX = x * scale
+    const scaledY = y * scale
+    const cos = Math.cos(angle)
+    const sin = Math.sin(angle)
+
+    position.setXY(
+      index,
+      scaledX * cos - scaledY * sin,
+      scaledX * sin + scaledY * cos,
+    )
+  }
+
+  position.needsUpdate = true
+}
+
+function applySphericalVariation(
+  geometry: THREE.BufferGeometry,
+  sideVariation: number,
+) {
+  if (sideVariation === 0) {
+    return
+  }
+
+  const position = geometry.getAttribute("position")
+
+  for (let index = 0; index < position.count; index += 1) {
+    const x = position.getX(index)
+    const y = position.getY(index)
+    const z = position.getZ(index)
+    const radius = Math.hypot(x, y, z)
+
+    if (radius === 0) {
+      continue
+    }
+
+    const azimuth = Math.atan2(y, x)
+    const elevation = Math.acos(clamp(z / radius, -1, 1))
+    const wave =
+      Math.sin(azimuth * 3 + elevation * 2) * 0.62 +
+      Math.cos(azimuth * 5 - elevation) * 0.38
+    const scale = 1 + sideVariation * 0.18 * wave
+
+    position.setXYZ(index, x * scale, y * scale, z * scale)
+  }
+
+  position.needsUpdate = true
+}
+
+function createPrismShape({
   angleBias,
   bevel,
   depth,
@@ -214,7 +354,6 @@ function create3DShape({
   taper,
   twist,
 }: ShapeParameters): THREE.Object3D {
-  const group = new THREE.Group()
   const effectiveDepth = Math.max(depth, 0.05)
   const bevelAmount = Math.min(size * bevel, effectiveDepth * 0.35)
   const polygonPoints = createPolygonPoints({
@@ -236,39 +375,133 @@ function create3DShape({
   geometry.center()
   geometry.computeVertexNormals()
 
-  const mesh = new THREE.Mesh(
-    geometry,
-    new THREE.MeshStandardMaterial({
-      color: 0x3cff9e,
-      metalness: 0.18,
-      roughness: 0.48,
-    }),
-  )
-  const edges = new THREE.LineSegments(
-    new THREE.EdgesGeometry(geometry, 20),
-    new THREE.LineBasicMaterial({
-      color: 0xffffff,
-      transparent: true,
-      opacity: 0.62,
-    }),
-  )
+  return createSolidShape(geometry)
+}
 
-  group.add(mesh, edges)
+function createPyramidShape({
+  angleBias,
+  depth,
+  sideVariation,
+  sides,
+  size,
+}: ShapeParameters): THREE.Object3D {
+  const effectiveDepth = Math.max(depth, 0.05)
+  const basePoints = createPolygonPoints({
+    angleBias,
+    radius: size,
+    sideVariation,
+    sides,
+  })
+  const apexIndex = basePoints.length
+  const centerIndex = apexIndex + 1
+  const vertices = [
+    ...basePoints.flatMap((point) => [point.x, point.y, -effectiveDepth / 2]),
+    0,
+    0,
+    effectiveDepth / 2,
+    0,
+    0,
+    -effectiveDepth / 2,
+  ]
+  const indices: number[] = []
 
-  return group
+  basePoints.forEach((_, index) => {
+    const nextIndex = (index + 1) % basePoints.length
+
+    indices.push(index, nextIndex, apexIndex)
+    indices.push(centerIndex, nextIndex, index)
+  })
+
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+
+  return createSolidShape(geometry, { color: 0xff8f3c })
+}
+
+function createSphereShape({
+  depth,
+  sideVariation,
+  sides,
+  size,
+  taper,
+  twist,
+}: ShapeParameters): THREE.Object3D {
+  const widthSegments = Math.max(8, Math.min(64, sides * 2))
+  const heightSegments = Math.max(6, Math.min(32, sides))
+  const geometry = new THREE.SphereGeometry(size, widthSegments, heightSegments)
+
+  applySphericalVariation(geometry, sideVariation)
+  applyCenteredDepthTaperAndTwist(geometry, depth, taper, twist)
+  geometry.computeVertexNormals()
+
+  return createSolidShape(geometry, { color: 0x8ee6ff, edgeStyle: "wire" })
+}
+
+function createPolyhedronGeometry(sides: number, size: number) {
+  switch (getNearestPolyhedronSideCount(sides)) {
+    case 4:
+      return new THREE.TetrahedronGeometry(size * 1.28)
+    case 6:
+      return new THREE.BoxGeometry(size * 1.55, size * 1.55, size * 1.55)
+    case 8:
+      return new THREE.OctahedronGeometry(size * 1.22)
+    case 12:
+      return new THREE.DodecahedronGeometry(size * 1.12)
+    case 20:
+      return new THREE.IcosahedronGeometry(size * 1.14)
+    default:
+      return new THREE.OctahedronGeometry(size * 1.22)
+  }
+}
+
+function createPolyhedronShape({
+  depth,
+  sides,
+  size,
+  taper,
+  twist,
+}: ShapeParameters): THREE.Object3D {
+  const geometry = createPolyhedronGeometry(sides, size)
+
+  applyCenteredDepthTaperAndTwist(geometry, depth, taper, twist)
+  geometry.computeVertexNormals()
+
+  return createSolidShape(geometry, { color: 0x3cff9e })
+}
+
+function create3DShape(
+  family: ShapeFamily,
+  parameters: ShapeParameters,
+): THREE.Object3D {
+  switch (family) {
+    case "prism":
+      return createPrismShape(parameters)
+    case "pyramid":
+      return createPyramidShape(parameters)
+    case "sphere":
+      return createSphereShape(parameters)
+    case "polyhedron":
+      return createPolyhedronShape(parameters)
+    default:
+      return createPrismShape(parameters)
+  }
 }
 
 function buildShape({
+  family,
   parameters,
   mode,
   rotation,
 }: {
+  family: ShapeFamily
   parameters: ShapeParameters
   mode: ShapeMode
   rotation: number
 }): THREE.Object3D {
   const shape =
-    mode === "2d" ? create2DShape(parameters) : create3DShape(parameters)
+    mode === "2d" ? create2DShape(parameters) : create3DShape(family, parameters)
   const radians = toRadians(rotation)
 
   if (mode === "2d") {
@@ -285,6 +518,7 @@ export function ShapeGeneratorView() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const sceneRef = useRef<SceneHandle | null>(null)
   const [mode, setMode] = useState<ShapeMode>("2d")
+  const [shapeFamily, setShapeFamily] = useState<ShapeFamily>("prism")
   const [sides, setSides] = useState(6)
   const [size, setSize] = useState(1.7)
   const [rotation, setRotation] = useState(0)
@@ -367,6 +601,7 @@ export function ShapeGeneratorView() {
     clearGroup(scene.group)
     scene.group.add(
       buildShape({
+        family: shapeFamily,
         mode,
         parameters: {
           angleBias,
@@ -390,12 +625,28 @@ export function ShapeGeneratorView() {
     depth,
     mode,
     rotation,
+    shapeFamily,
     sideVariation,
     sides,
     size,
     taper,
     twist,
   ])
+
+  const isPolygonal3D =
+    mode === "3d" && (shapeFamily === "prism" || shapeFamily === "pyramid")
+  const isSphere = mode === "3d" && shapeFamily === "sphere"
+  const isPolyhedron = mode === "3d" && shapeFamily === "polyhedron"
+  const showSides = mode === "2d" || isPolygonal3D || isSphere || isPolyhedron
+  const showAngleBias = mode === "2d" || isPolygonal3D
+  const showSideVariation = mode === "2d" || isPolygonal3D || isSphere
+  const showBevel = mode === "3d" && shapeFamily === "prism"
+  const showTwistAndTaper = mode === "3d" && shapeFamily !== "pyramid"
+  const sideSliderValue = isPolyhedron
+    ? getNearestPolyhedronSideCount(sides)
+    : sides
+  const sideSliderMin = isPolyhedron ? 4 : 3
+  const sideSliderMax = isPolyhedron ? 20 : 24
 
   return (
     <main className="shape-generator-shell">
@@ -428,14 +679,36 @@ export function ShapeGeneratorView() {
           </button>
         </div>
 
-        <ControlSlider
-          label="Sides"
-          value={sides}
-          min={3}
-          max={24}
-          step={1}
-          onValueChange={setSides}
-        />
+        {mode === "3d" ? (
+          <label className="control-field">
+            <span>Form</span>
+            <select
+              value={shapeFamily}
+              onChange={(event) =>
+                setShapeFamily(event.target.value as ShapeFamily)
+              }
+            >
+              {shapeFamilyOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
+        {showSides ? (
+          <ControlSlider
+            label={isSphere ? "Segments" : "Sides"}
+            value={sideSliderValue}
+            min={sideSliderMin}
+            max={sideSliderMax}
+            step={1}
+            onValueChange={(value) =>
+              setSides(isPolyhedron ? getNearestPolyhedronSideCount(value) : value)
+            }
+          />
+        ) : null}
         <ControlSlider
           label="Size"
           value={size}
@@ -452,22 +725,26 @@ export function ShapeGeneratorView() {
           step={1}
           onValueChange={setRotation}
         />
-        <ControlSlider
-          label="Angle Bias"
-          value={angleBias}
-          min={-1}
-          max={1}
-          step={0.01}
-          onValueChange={setAngleBias}
-        />
-        <ControlSlider
-          label="Side Variation"
-          value={sideVariation}
-          min={0}
-          max={1}
-          step={0.01}
-          onValueChange={setSideVariation}
-        />
+        {showAngleBias ? (
+          <ControlSlider
+            label="Angle Bias"
+            value={angleBias}
+            min={-1}
+            max={1}
+            step={0.01}
+            onValueChange={setAngleBias}
+          />
+        ) : null}
+        {showSideVariation ? (
+          <ControlSlider
+            label="Side Variation"
+            value={sideVariation}
+            min={0}
+            max={1}
+            step={0.01}
+            onValueChange={setSideVariation}
+          />
+        ) : null}
         {mode === "3d" ? (
           <>
             <ControlSlider
@@ -478,30 +755,36 @@ export function ShapeGeneratorView() {
               step={0.1}
               onValueChange={setDepth}
             />
-            <ControlSlider
-              label="Bevel"
-              value={bevel}
-              min={0}
-              max={0.18}
-              step={0.01}
-              onValueChange={setBevel}
-            />
-            <ControlSlider
-              label="Twist"
-              value={twist}
-              min={-180}
-              max={180}
-              step={1}
-              onValueChange={setTwist}
-            />
-            <ControlSlider
-              label="Taper"
-              value={taper}
-              min={0.25}
-              max={1.8}
-              step={0.01}
-              onValueChange={setTaper}
-            />
+            {showBevel ? (
+              <ControlSlider
+                label="Bevel"
+                value={bevel}
+                min={0}
+                max={0.18}
+                step={0.01}
+                onValueChange={setBevel}
+              />
+            ) : null}
+            {showTwistAndTaper ? (
+              <>
+                <ControlSlider
+                  label="Twist"
+                  value={twist}
+                  min={-180}
+                  max={180}
+                  step={1}
+                  onValueChange={setTwist}
+                />
+                <ControlSlider
+                  label="Taper"
+                  value={taper}
+                  min={0.25}
+                  max={1.8}
+                  step={0.01}
+                  onValueChange={setTaper}
+                />
+              </>
+            ) : null}
           </>
         ) : null}
       </section>
