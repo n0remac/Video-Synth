@@ -15,10 +15,19 @@ import type {
 
 type SocketStatus = "connecting" | "connected" | "disconnected"
 
+type VisualizerSocketOptions = {
+  audioInstanceId?: string
+  onStageAudioFrame?(frame: AudioAnalysisFrame): void
+}
+
 export function useVisualizerSocket(
   role: "controller" | "color" | "audio" = "controller",
+  options: VisualizerSocketOptions = {},
 ) {
   const socketRef = useRef<WebSocket | null>(null)
+  const audioInstanceId = options.audioInstanceId ?? "default"
+  const onStageAudioFrameRef = useRef(options.onStageAudioFrame)
+  const lastStageAudioFrameStateAtRef = useRef(0)
   const [status, setStatus] = useState<SocketStatus>("connecting")
   const [userId, setUserId] = useState("pending")
   const [assignedColor, setAssignedColor] = useState("#ff2d75")
@@ -29,7 +38,13 @@ export function useVisualizerSocket(
     useState<AudioAnalysisFrame | null>(null)
 
   useEffect(() => {
-    const socket = new WebSocket(getVisualizerSocketUrl(role))
+    onStageAudioFrameRef.current = options.onStageAudioFrame
+  }, [options.onStageAudioFrame])
+
+  useEffect(() => {
+    const socket = new WebSocket(
+      getVisualizerSocketUrl(role, { audioInstanceId }),
+    )
     socketRef.current = socket
     let ownUserId = "pending"
     setStatus("connecting")
@@ -88,15 +103,28 @@ export function useVisualizerSocket(
       }
 
       if (message?.type === "audio_settings_snapshot") {
-        setAudioSettings(message.settings)
+        if (message.audioInstanceId === audioInstanceId) {
+          setAudioSettings(message.settings)
+        }
       }
 
       if (message?.type === "audio_settings_update") {
-        setAudioSettings(message.settings)
+        if (message.audioInstanceId === audioInstanceId) {
+          setAudioSettings(message.settings)
+        }
       }
 
       if (message?.type === "stage_audio_frame") {
-        setStageAudioFrame(message.frame)
+        onStageAudioFrameRef.current?.(message.frame)
+
+        if (
+          lastStageAudioFrameStateAtRef.current === 0 ||
+          message.frame.timestamp < lastStageAudioFrameStateAtRef.current ||
+          message.frame.timestamp - lastStageAudioFrameStateAtRef.current >= 100
+        ) {
+          lastStageAudioFrameStateAtRef.current = message.frame.timestamp
+          setStageAudioFrame(message.frame)
+        }
       }
 
       if (message?.type === "user_left") {
@@ -110,7 +138,7 @@ export function useVisualizerSocket(
       socket.close()
       socketRef.current = null
     }
-  }, [role])
+  }, [audioInstanceId, role])
 
   const sendPointer = useCallback((message: PointerMessage) => {
     const socket = socketRef.current

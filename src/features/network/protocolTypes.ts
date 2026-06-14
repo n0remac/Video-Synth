@@ -33,6 +33,22 @@ export type AudioCircleSettings = {
   circleColor: string
 }
 
+export type AudioRouteSignal = {
+  audioInstanceId: string
+  sampleStartPercent: number
+  sampleEndPercent: number
+  level: number
+  fastLevel: number
+  slowLevel: number
+  floor: number
+  peak: number
+  riseAmount: number
+  fallAmount: number
+  riseRate: number
+  fallRate: number
+  triggered: boolean
+}
+
 export type AudioAnalysisFrame = {
   volume: number
   low: number
@@ -40,6 +56,10 @@ export type AudioAnalysisFrame = {
   high: number
   dominantBin: number
   spectrum: number[]
+  source?: "audio-worklet" | "analyser"
+  sequence?: number
+  analysisRateHz?: number
+  routes?: AudioRouteSignal[]
   timestamp: number
 }
 
@@ -51,6 +71,7 @@ export type StageAudioFrameMessage = {
 
 export type AudioSettingsSnapshotMessage = {
   type: "audio_settings_snapshot"
+  audioInstanceId: string
   settings: AudioCircleSettings
   updatedAt: number
 }
@@ -58,6 +79,7 @@ export type AudioSettingsSnapshotMessage = {
 export type AudioSettingsUpdateMessage = {
   type: "audio_settings_update"
   userId: string
+  audioInstanceId: string
   settings: AudioCircleSettings
   timestamp: number
 }

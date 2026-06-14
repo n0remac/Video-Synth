@@ -19,7 +19,7 @@ export function ControllerNav() {
       </Link>
       <Link
         href="/audio-controller"
-        data-active={pathname === "/audio-controller"}
+        data-active={pathname.startsWith("/audio-controller")}
       >
         Audio
       </Link>

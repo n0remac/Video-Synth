@@ -1,11 +1,15 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import * as THREE from "three"
 import { createStageAudioFrameMessage } from "@/features/network/protocol"
 import { parseVisualizerMessage } from "@/features/network/messageValidation"
-import type { PointerMessage } from "@/features/network/protocolTypes"
-import type { AudioAnalysisFrame } from "@/features/network/protocolTypes"
+import type {
+  AudioAnalysisFrame,
+  AudioCircleSettings,
+  PointerMessage,
+} from "@/features/network/protocolTypes"
+import type { AudioWorkletTriggerEvent } from "@/features/audio/useAudioAnalyser"
 import { getVisualizerSocketUrl } from "@/features/network/protocol"
 import { stageConfig } from "./stageConfig"
 import { createCamera, resizeCameraToViewport } from "./render/createCamera"
@@ -21,6 +25,11 @@ type ConnectionStatus = "connecting" | "connected" | "disconnected"
 type PointerWorld = {
   x: number
   y: number
+}
+
+export type StageAudioRouteConfig = {
+  audioInstanceId: string
+  settings: AudioCircleSettings
 }
 
 function messageToRippleInput(
@@ -74,8 +83,16 @@ function getPointerWorld(
 export function useStageRuntime() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const socketRef = useRef<WebSocket | null>(null)
+  const audioTriggerHandlerRef = useRef<
+    ((event: AudioWorkletTriggerEvent) => void) | null
+  >(null)
   const [connectionStatus, setConnectionStatus] =
     useState<ConnectionStatus>("connecting")
+  const [audioRoutes, setAudioRoutes] = useState<StageAudioRouteConfig[]>([])
+
+  const handleAudioTrigger = useCallback((event: AudioWorkletTriggerEvent) => {
+    audioTriggerHandlerRef.current?.(event)
+  }, [])
 
   function sendAudioFrame(frame: AudioAnalysisFrame) {
     const socket = socketRef.current
@@ -97,11 +114,13 @@ export function useStageRuntime() {
 
   const api = useMemo(
     () => ({
+      audioRoutes,
       canvasRef,
       connectionStatus,
+      handleAudioTrigger,
       sendAudioFrame,
     }),
-    [connectionStatus],
+    [audioRoutes, connectionStatus, handleAudioTrigger],
   )
 
   useEffect(() => {
@@ -124,6 +143,17 @@ export function useStageRuntime() {
     const trailPaint = new TrailPaintModule({ scene })
     const world = resizeCameraToViewport(camera, stageConfig.worldHeight)
     let localPointerPrevious: PointerWorld | null = null
+
+    audioTriggerHandlerRef.current = (event) => {
+      ripplePaint.receiveInput({
+        id: `audio-${event.audioInstanceId}-${event.timestamp}-${Math.random().toString(36).slice(2, 7)}`,
+        userId: event.audioInstanceId,
+        x: (Math.random() - 0.5) * world.worldWidth,
+        y: (0.5 - Math.random()) * world.worldHeight,
+        speed: event.level * 4,
+        color: event.color,
+      })
+    }
 
     const socket = new WebSocket(getVisualizerSocketUrl("stage"))
     socketRef.current = socket
@@ -180,6 +210,29 @@ export function useStageRuntime() {
       if (message.type === "clear_stage") {
         ripplePaint.clear()
         trailPaint.clear()
+      }
+
+      if (
+        message.type === "audio_settings_snapshot" ||
+        message.type === "audio_settings_update"
+      ) {
+        setAudioRoutes((currentRoutes) => {
+          const nextRoute = {
+            audioInstanceId: message.audioInstanceId,
+            settings: message.settings,
+          }
+          const existingIndex = currentRoutes.findIndex(
+            (route) => route.audioInstanceId === message.audioInstanceId,
+          )
+
+          if (existingIndex === -1) {
+            return [...currentRoutes, nextRoute]
+          }
+
+          return currentRoutes.map((route, index) =>
+            index === existingIndex ? nextRoute : route,
+          )
+        })
       }
     })
 
@@ -249,6 +302,7 @@ export function useStageRuntime() {
 
     return () => {
       loop.stop()
+      audioTriggerHandlerRef.current = null
       socket.close()
       socketRef.current = null
       window.removeEventListener("resize", handleResize)

@@ -1,6 +1,7 @@
 import { createServer } from "node:http"
 import next from "next"
 import { WebSocketServer } from "ws"
+import { normalizeAudioInstanceId } from "./src/server/audioInstanceIds.mjs"
 
 const dev = process.env.NODE_ENV !== "production"
 const hostname = process.env.HOSTNAME ?? "0.0.0.0"
@@ -22,7 +23,7 @@ const userColors = [
 
 const clientRoles = new Set(["controller", "color", "audio", "stage"])
 
-let audioCircleSettings = {
+const defaultAudioCircleSettings = {
   sampleStartPercent: 0,
   sampleEndPercent: 20,
   triggerMode: "manual",
@@ -34,7 +35,7 @@ let audioCircleSettings = {
   circleColor: "#00d1ff",
 }
 
-let audioCircleSettingsUpdatedAt = now()
+const audioCircleSettingsByInstance = new Map()
 
 function now() {
   return Date.now()
@@ -42,6 +43,34 @@ function now() {
 
 function createUserId() {
   return `user-${Math.random().toString(36).slice(2, 9)}`
+}
+
+function getAudioCircleState(audioInstanceId) {
+  const existingState = audioCircleSettingsByInstance.get(audioInstanceId)
+
+  if (existingState) {
+    return existingState
+  }
+
+  const state = {
+    settings: { ...defaultAudioCircleSettings },
+    updatedAt: now(),
+  }
+
+  audioCircleSettingsByInstance.set(audioInstanceId, state)
+
+  return state
+}
+
+function setAudioCircleSettings(audioInstanceId, settings) {
+  const state = {
+    settings,
+    updatedAt: now(),
+  }
+
+  audioCircleSettingsByInstance.set(audioInstanceId, state)
+
+  return state
 }
 
 function isFiniteNumber(value) {
@@ -119,6 +148,32 @@ function isAudioAnalysisFrame(frame) {
     isFiniteNumber(frame.dominantBin) &&
     Array.isArray(frame.spectrum) &&
     frame.spectrum.every(isNormalized) &&
+    (frame.source === undefined ||
+      frame.source === "audio-worklet" ||
+      frame.source === "analyser") &&
+    (frame.sequence === undefined || isFiniteNumber(frame.sequence)) &&
+    (frame.analysisRateHz === undefined ||
+      isFiniteNumber(frame.analysisRateHz)) &&
+    (frame.routes === undefined ||
+      (Array.isArray(frame.routes) &&
+        frame.routes.every(
+          (route) =>
+            route &&
+            normalizeAudioInstanceId(route.audioInstanceId) ===
+              route.audioInstanceId &&
+            isFiniteNumber(route.sampleStartPercent) &&
+            isFiniteNumber(route.sampleEndPercent) &&
+            isNormalized(route.level) &&
+            isNormalized(route.fastLevel) &&
+            isNormalized(route.slowLevel) &&
+            isNormalized(route.floor) &&
+            isNormalized(route.peak) &&
+            isNormalized(route.riseAmount) &&
+            isNormalized(route.fallAmount) &&
+            isNormalized(route.riseRate) &&
+            isNormalized(route.fallRate) &&
+            typeof route.triggered === "boolean",
+        ))) &&
     isFiniteNumber(frame.timestamp)
   )
 }
@@ -133,10 +188,14 @@ function isStageAudioFrameMessage(message) {
 }
 
 function isAudioSettingsUpdateMessage(message) {
+  const hasAudioInstanceId = message?.audioInstanceId !== undefined
+
   return (
     message &&
     message.type === "audio_settings_update" &&
     typeof message.userId === "string" &&
+    (!hasAudioInstanceId ||
+      normalizeAudioInstanceId(message.audioInstanceId) === message.audioInstanceId) &&
     isAudioCircleSettings(message.settings) &&
     isFiniteNumber(message.timestamp)
   )
@@ -194,6 +253,12 @@ app.prepare().then(() => {
     return clientRoles.has(role) ? role : "controller"
   }
 
+  function getAudioInstanceId(request) {
+    const url = new URL(request.url ?? "/ws", `http://${request.headers.host}`)
+
+    return normalizeAudioInstanceId(url.searchParams.get("audioInstanceId"))
+  }
+
   function getTargetableUsers() {
     return Array.from(clients.values())
       .filter((client) => client.role === "controller" || client.role === "audio")
@@ -214,12 +279,51 @@ app.prepare().then(() => {
     }
   }
 
+  function broadcastToAudioInstance(audioInstanceId, message) {
+    const payload = JSON.stringify(message)
+
+    for (const [client, connectedUser] of clients) {
+      if (
+        client.readyState === 1 &&
+        connectedUser.role === "audio" &&
+        connectedUser.audioInstanceId === audioInstanceId
+      ) {
+        client.send(payload)
+      }
+    }
+  }
+
+  function broadcastToStages(message) {
+    const payload = JSON.stringify(message)
+
+    for (const [client, connectedUser] of clients) {
+      if (client.readyState === 1 && connectedUser.role === "stage") {
+        client.send(payload)
+      }
+    }
+  }
+
+  function sendAudioSettingsSnapshot(socket, audioInstanceId) {
+    const audioCircleState = getAudioCircleState(audioInstanceId)
+
+    socket.send(
+      JSON.stringify({
+        type: "audio_settings_snapshot",
+        audioInstanceId,
+        settings: audioCircleState.settings,
+        updatedAt: audioCircleState.updatedAt,
+      }),
+    )
+  }
+
   wss.on("connection", (socket, request) => {
     const role = getRole(request)
+    const audioInstanceId = role === "audio" ? getAudioInstanceId(request) : undefined
     const color = userColors[clients.size % userColors.length]
     const user = {
       id: createUserId(),
       role,
+      audioInstanceId,
       color,
       connectedAt: now(),
       lastSeenAt: now(),
@@ -244,13 +348,21 @@ app.prepare().then(() => {
       }),
     )
 
-    socket.send(
-      JSON.stringify({
+    if (role === "audio") {
+      sendAudioSettingsSnapshot(socket, user.audioInstanceId)
+      broadcastToStages({
         type: "audio_settings_snapshot",
-        settings: audioCircleSettings,
-        updatedAt: audioCircleSettingsUpdatedAt,
-      }),
-    )
+        audioInstanceId: user.audioInstanceId,
+        settings: getAudioCircleState(user.audioInstanceId).settings,
+        updatedAt: getAudioCircleState(user.audioInstanceId).updatedAt,
+      })
+    }
+
+    if (role === "stage") {
+      for (const audioInstanceId of audioCircleSettingsByInstance.keys()) {
+        sendAudioSettingsSnapshot(socket, audioInstanceId)
+      }
+    }
 
     if (role === "controller" || role === "audio") {
       broadcast({
@@ -283,14 +395,29 @@ app.prepare().then(() => {
         return
       }
 
-      if (role === "audio" && isAudioSettingsUpdateMessage(message)) {
-        audioCircleSettings = message.settings
-        audioCircleSettingsUpdatedAt = now()
-        broadcast({
+      if (
+        role === "audio" &&
+        isAudioSettingsUpdateMessage(message) &&
+        normalizeAudioInstanceId(message.audioInstanceId) === user.audioInstanceId
+      ) {
+        const audioCircleState = setAudioCircleSettings(
+          user.audioInstanceId,
+          message.settings,
+        )
+
+        broadcastToAudioInstance(user.audioInstanceId, {
           type: "audio_settings_update",
           userId: user.id,
-          settings: audioCircleSettings,
-          timestamp: audioCircleSettingsUpdatedAt,
+          audioInstanceId: user.audioInstanceId,
+          settings: audioCircleState.settings,
+          timestamp: audioCircleState.updatedAt,
+        })
+        broadcastToStages({
+          type: "audio_settings_update",
+          userId: user.id,
+          audioInstanceId: user.audioInstanceId,
+          settings: audioCircleState.settings,
+          timestamp: audioCircleState.updatedAt,
         })
         return
       }

@@ -39,6 +39,34 @@ function isAudioCircleSettings(value: unknown) {
   )
 }
 
+function isAudioInstanceId(value: unknown) {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 80 &&
+    /^[A-Za-z0-9_-]+$/.test(value)
+  )
+}
+
+function isAudioRouteSignal(value: unknown) {
+  return (
+    isRecord(value) &&
+    isAudioInstanceId(value.audioInstanceId) &&
+    isFiniteNumber(value.sampleStartPercent) &&
+    isFiniteNumber(value.sampleEndPercent) &&
+    isNormalized(value.level) &&
+    isNormalized(value.fastLevel) &&
+    isNormalized(value.slowLevel) &&
+    isNormalized(value.floor) &&
+    isNormalized(value.peak) &&
+    isNormalized(value.riseAmount) &&
+    isNormalized(value.fallAmount) &&
+    isNormalized(value.riseRate) &&
+    isNormalized(value.fallRate) &&
+    typeof value.triggered === "boolean"
+  )
+}
+
 function isAudioAnalysisFrame(value: unknown) {
   return (
     isRecord(value) &&
@@ -49,6 +77,14 @@ function isAudioAnalysisFrame(value: unknown) {
     isFiniteNumber(value.dominantBin) &&
     Array.isArray(value.spectrum) &&
     value.spectrum.every(isNormalized) &&
+    (value.source === undefined ||
+      value.source === "audio-worklet" ||
+      value.source === "analyser") &&
+    (value.sequence === undefined || isFiniteNumber(value.sequence)) &&
+    (value.analysisRateHz === undefined ||
+      isFiniteNumber(value.analysisRateHz)) &&
+    (value.routes === undefined ||
+      (Array.isArray(value.routes) && value.routes.every(isAudioRouteSignal))) &&
     isFiniteNumber(value.timestamp)
   )
 }
@@ -94,6 +130,7 @@ export function isAudioSettingsSnapshotMessage(
   return (
     isRecord(value) &&
     value.type === "audio_settings_snapshot" &&
+    isAudioInstanceId(value.audioInstanceId) &&
     isAudioCircleSettings(value.settings) &&
     isFiniteNumber(value.updatedAt)
   )
@@ -106,6 +143,7 @@ export function isAudioSettingsUpdateMessage(
     isRecord(value) &&
     value.type === "audio_settings_update" &&
     typeof value.userId === "string" &&
+    isAudioInstanceId(value.audioInstanceId) &&
     isAudioCircleSettings(value.settings) &&
     isFiniteNumber(value.timestamp)
   )

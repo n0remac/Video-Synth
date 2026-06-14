@@ -48,6 +48,7 @@ export function createAudioSettingsUpdateMessage(
   return {
     type: "audio_settings_update",
     userId: input.userId,
+    audioInstanceId: input.audioInstanceId,
     settings: input.settings,
     timestamp: input.timestamp,
   }
@@ -65,6 +66,7 @@ export function createStageAudioFrameMessage(
 
 export function getVisualizerSocketUrl(
   role?: "controller" | "color" | "audio" | "stage",
+  options: { audioInstanceId?: string } = {},
 ) {
   if (typeof window === "undefined") {
     return ""
@@ -75,6 +77,10 @@ export function getVisualizerSocketUrl(
 
   if (role) {
     url.searchParams.set("role", role)
+  }
+
+  if (role === "audio" && options.audioInstanceId) {
+    url.searchParams.set("audioInstanceId", options.audioInstanceId)
   }
 
   return url.toString()

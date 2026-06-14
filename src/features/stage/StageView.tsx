@@ -1,28 +1,21 @@
 "use client"
 
-import { useEffect, useRef } from "react"
 import { useAudioAnalyser } from "@/features/audio/useAudioAnalyser"
 import { useStageRuntime } from "./useStageRuntime"
 
 export function StageView() {
-  const { canvasRef, connectionStatus, sendAudioFrame } = useStageRuntime()
-  const audio = useAudioAnalyser()
-  const lastSentAtRef = useRef(0)
-
-  useEffect(() => {
-    if (!audio.frame || !audio.running) {
-      return
-    }
-
-    const now = Date.now()
-
-    if (now - lastSentAtRef.current < 1000 / 20) {
-      return
-    }
-
-    lastSentAtRef.current = now
-    sendAudioFrame(audio.frame)
-  }, [audio.frame, audio.running, sendAudioFrame])
+  const {
+    audioRoutes,
+    canvasRef,
+    connectionStatus,
+    handleAudioTrigger,
+    sendAudioFrame,
+  } = useStageRuntime()
+  const audio = useAudioAnalyser({
+    routes: audioRoutes,
+    onFrame: sendAudioFrame,
+    onTrigger: handleAudioTrigger,
+  })
 
   return (
     <main className="stage-shell">
