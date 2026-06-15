@@ -35,7 +35,11 @@ function isAudioCircleSettings(value: unknown) {
     isNormalized(value.adaptiveSpeed) &&
     isFiniteNumber(value.gain) &&
     isFiniteNumber(value.cooldownMs) &&
-    typeof value.circleColor === "string"
+    typeof value.circleColor === "string" &&
+    typeof value.circleGrowOnRise === "boolean" &&
+    typeof value.circleFadeOnFall === "boolean" &&
+    typeof value.circleShrinkOnFall === "boolean" &&
+    typeof value.circleLevelControlsSize === "boolean"
   )
 }
 

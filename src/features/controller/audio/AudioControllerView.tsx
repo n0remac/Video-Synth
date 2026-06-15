@@ -64,6 +64,10 @@ const defaultAudioSettings: AudioCircleSettings = {
   gain: 1,
   cooldownMs: 250,
   circleColor: "#00d1ff",
+  circleGrowOnRise: false,
+  circleFadeOnFall: false,
+  circleShrinkOnFall: false,
+  circleLevelControlsSize: false,
 }
 
 function getSelectedSpectrumRange(
@@ -871,6 +875,55 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
           step={25}
           onValueChange={(cooldownMs) => updateSettings({ cooldownMs })}
         />
+      </section>
+
+      <section className="audio-pulse-panel" aria-label="Triggered circle behavior">
+        <header>
+          <p className="eyebrow">Triggered Circles</p>
+          <h2>Rise/Fall Pulse</h2>
+        </header>
+        <label className="audio-checkbox-field">
+          <input
+            type="checkbox"
+            checked={settings.circleGrowOnRise}
+            onChange={(event) =>
+              updateSettings({ circleGrowOnRise: event.currentTarget.checked })
+            }
+          />
+          <span>Grow on rise</span>
+        </label>
+        <label className="audio-checkbox-field">
+          <input
+            type="checkbox"
+            checked={settings.circleFadeOnFall}
+            onChange={(event) =>
+              updateSettings({ circleFadeOnFall: event.currentTarget.checked })
+            }
+          />
+          <span>Fade on fall</span>
+        </label>
+        <label className="audio-checkbox-field">
+          <input
+            type="checkbox"
+            checked={settings.circleShrinkOnFall}
+            onChange={(event) =>
+              updateSettings({ circleShrinkOnFall: event.currentTarget.checked })
+            }
+          />
+          <span>Shrink on fall</span>
+        </label>
+        <label className="audio-checkbox-field">
+          <input
+            type="checkbox"
+            checked={settings.circleLevelControlsSize}
+            onChange={(event) =>
+              updateSettings({
+                circleLevelControlsSize: event.currentTarget.checked,
+              })
+            }
+          />
+          <span>Level sets size</span>
+        </label>
       </section>
 
       {!stageAudioFrame ? (

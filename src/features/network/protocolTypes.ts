@@ -31,6 +31,10 @@ export type AudioCircleSettings = {
   gain: number
   cooldownMs: number
   circleColor: string
+  circleGrowOnRise: boolean
+  circleFadeOnFall: boolean
+  circleShrinkOnFall: boolean
+  circleLevelControlsSize: boolean
 }
 
 export type AudioRouteSignal = {

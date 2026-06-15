@@ -1,6 +1,11 @@
 import * as THREE from "three"
 import type { InputReceivingModule } from "@/features/stage/stageTypes"
-import { addRipple, updateRipplePaintState } from "./ripplePaintLogic"
+import type { AudioRouteSignal } from "@/features/network/protocolTypes"
+import {
+  addRipple,
+  updateRipplePaintState,
+  updateRipplePaintStateFromAudioRoute,
+} from "./ripplePaintLogic"
 import {
   applyRippleToMesh,
   createRippleMesh,
@@ -29,6 +34,10 @@ export class RipplePaintModule
   receiveInput(input: RippleInput) {
     this.state = addRipple(this.state, input, this.options.maxRipples)
     this.syncMeshes()
+  }
+
+  receiveAudioRouteSignal(routeSignal: AudioRouteSignal) {
+    this.state = updateRipplePaintStateFromAudioRoute(this.state, routeSignal)
   }
 
   clear() {

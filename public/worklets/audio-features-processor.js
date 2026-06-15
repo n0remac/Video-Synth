@@ -413,6 +413,8 @@ class SignalPaintAudioProcessor extends AudioWorkletProcessor {
           audioInstanceId,
           color: settings.circleColor,
           level,
+          riseAmount: levelMotion.riseAmount,
+          fallAmount: levelMotion.fallAmount,
           timestamp,
         })
       }

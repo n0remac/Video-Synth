@@ -1,3 +1,18 @@
+export type RippleAudioMotion = {
+  audioInstanceId: string
+  growOnRise: boolean
+  fadeOnFall: boolean
+  shrinkOnFall: boolean
+  levelControlsSize: boolean
+  phase: "rising" | "falling"
+  hasRisen: boolean
+  signalAge: number
+  riseAmount: number
+  fallAmount: number
+  level: number
+  peakRadius: number
+}
+
 export type Ripple = {
   id: string
   userId: string
@@ -9,6 +24,7 @@ export type Ripple = {
   age: number
   lifetime: number
   color: string
+  audioMotion?: RippleAudioMotion
 }
 
 export type RippleInput = {
@@ -19,6 +35,16 @@ export type RippleInput = {
   speed: number
   color: string
   intensity?: number
+  audioMotion?: {
+    audioInstanceId: string
+    growOnRise: boolean
+    fadeOnFall: boolean
+    shrinkOnFall: boolean
+    levelControlsSize: boolean
+    level: number
+    riseAmount: number
+    fallAmount: number
+  }
 }
 
 export type RipplePaintState = {

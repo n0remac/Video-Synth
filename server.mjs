@@ -33,6 +33,10 @@ const defaultAudioCircleSettings = {
   gain: 1,
   cooldownMs: 250,
   circleColor: "#00d1ff",
+  circleGrowOnRise: false,
+  circleFadeOnFall: false,
+  circleShrinkOnFall: false,
+  circleLevelControlsSize: false,
 }
 
 const audioCircleSettingsByInstance = new Map()
@@ -117,6 +121,10 @@ function isAudioCircleSettings(settings) {
     isFiniteNumber(settings.gain) &&
     isFiniteNumber(settings.cooldownMs) &&
     typeof settings.circleColor === "string" &&
+    typeof settings.circleGrowOnRise === "boolean" &&
+    typeof settings.circleFadeOnFall === "boolean" &&
+    typeof settings.circleShrinkOnFall === "boolean" &&
+    typeof settings.circleLevelControlsSize === "boolean" &&
     settings.sampleStartPercent >= 0 &&
     settings.sampleStartPercent <= 100 &&
     settings.sampleEndPercent >= 0 &&

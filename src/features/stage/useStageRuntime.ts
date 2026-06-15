@@ -7,6 +7,7 @@ import { parseVisualizerMessage } from "@/features/network/messageValidation"
 import type {
   AudioAnalysisFrame,
   AudioCircleSettings,
+  AudioRouteSignal,
   PointerMessage,
 } from "@/features/network/protocolTypes"
 import type { AudioWorkletTriggerEvent } from "@/features/audio/useAudioAnalyser"
@@ -86,6 +87,10 @@ export function useStageRuntime() {
   const audioTriggerHandlerRef = useRef<
     ((event: AudioWorkletTriggerEvent) => void) | null
   >(null)
+  const audioFrameHandlerRef = useRef<((frame: AudioAnalysisFrame) => void) | null>(
+    null,
+  )
+  const audioRouteSettingsRef = useRef(new Map<string, AudioCircleSettings>())
   const [connectionStatus, setConnectionStatus] =
     useState<ConnectionStatus>("connecting")
   const [audioRoutes, setAudioRoutes] = useState<StageAudioRouteConfig[]>([])
@@ -95,6 +100,8 @@ export function useStageRuntime() {
   }, [])
 
   function sendAudioFrame(frame: AudioAnalysisFrame) {
+    audioFrameHandlerRef.current?.(frame)
+
     const socket = socketRef.current
 
     if (!socket || socket.readyState !== WebSocket.OPEN) {
@@ -124,6 +131,12 @@ export function useStageRuntime() {
   )
 
   useEffect(() => {
+    audioRouteSettingsRef.current = new Map(
+      audioRoutes.map((route) => [route.audioInstanceId, route.settings]),
+    )
+  }, [audioRoutes])
+
+  useEffect(() => {
     const canvas = canvasRef.current
 
     if (!canvas) {
@@ -144,7 +157,20 @@ export function useStageRuntime() {
     const world = resizeCameraToViewport(camera, stageConfig.worldHeight)
     let localPointerPrevious: PointerWorld | null = null
 
+    audioFrameHandlerRef.current = (frame) => {
+      frame.routes?.forEach((routeSignal: AudioRouteSignal) => {
+        ripplePaint.receiveAudioRouteSignal(routeSignal)
+      })
+    }
+
     audioTriggerHandlerRef.current = (event) => {
+      const settings = audioRouteSettingsRef.current.get(event.audioInstanceId)
+      const hasAudioMotion =
+        settings?.circleGrowOnRise === true ||
+        settings?.circleFadeOnFall === true ||
+        settings?.circleShrinkOnFall === true ||
+        settings?.circleLevelControlsSize === true
+
       ripplePaint.receiveInput({
         id: `audio-${event.audioInstanceId}-${event.timestamp}-${Math.random().toString(36).slice(2, 7)}`,
         userId: event.audioInstanceId,
@@ -152,6 +178,19 @@ export function useStageRuntime() {
         y: (0.5 - Math.random()) * world.worldHeight,
         speed: event.level * 4,
         color: event.color,
+        audioMotion:
+          settings && hasAudioMotion
+            ? {
+                audioInstanceId: event.audioInstanceId,
+                growOnRise: settings.circleGrowOnRise,
+                fadeOnFall: settings.circleFadeOnFall,
+                shrinkOnFall: settings.circleShrinkOnFall,
+                levelControlsSize: settings.circleLevelControlsSize,
+                level: event.level,
+                riseAmount: event.riseAmount,
+                fallAmount: event.fallAmount,
+              }
+            : undefined,
       })
     }
 
@@ -303,6 +342,7 @@ export function useStageRuntime() {
     return () => {
       loop.stop()
       audioTriggerHandlerRef.current = null
+      audioFrameHandlerRef.current = null
       socket.close()
       socketRef.current = null
       window.removeEventListener("resize", handleResize)

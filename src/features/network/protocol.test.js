@@ -15,6 +15,10 @@ const validAudioSettings = {
   gain: 1,
   cooldownMs: 250,
   circleColor: "#00d1ff",
+  circleGrowOnRise: false,
+  circleFadeOnFall: false,
+  circleShrinkOnFall: false,
+  circleLevelControlsSize: false,
 }
 
 test("creates audio settings updates with an audio instance id", () => {

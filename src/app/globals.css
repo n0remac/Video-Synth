@@ -235,7 +235,7 @@ canvas {
 }
 
 .audio-controller-shell {
-  grid-template-rows: auto auto minmax(280px, 1fr) auto auto auto;
+  grid-template-rows: auto auto minmax(280px, 1fr) auto auto auto auto;
 }
 
 .controller-nav {
@@ -467,6 +467,59 @@ canvas {
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 12px;
   align-items: end;
+}
+
+.audio-pulse-panel {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) repeat(4, minmax(130px, 1fr));
+  gap: 10px;
+  align-items: stretch;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.audio-pulse-panel header {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+}
+
+.audio-pulse-panel h2 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1rem;
+  letter-spacing: 0;
+}
+
+.audio-checkbox-field {
+  min-height: 48px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  color: rgba(255, 255, 255, 0.76);
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.audio-checkbox-field:has(input:checked) {
+  border-color: rgba(0, 209, 255, 0.74);
+  color: #ffffff;
+  background: rgba(0, 209, 255, 0.14);
+}
+
+.audio-checkbox-field input {
+  width: 18px;
+  height: 18px;
+  accent-color: #00d1ff;
+  flex: 0 0 auto;
 }
 
 .audio-motion-panel {
@@ -819,6 +872,14 @@ canvas {
 
   .audio-simple-panel {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .audio-pulse-panel {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .audio-pulse-panel header {
+    grid-column: span 2;
   }
 
   .audio-motion-panel {

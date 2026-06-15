@@ -112,6 +112,10 @@ test("updates route signals with manual trigger crossing and cooldown", () => {
     gain: 1,
     cooldownMs: 100,
     circleColor: "#00d1ff",
+    circleGrowOnRise: false,
+    circleFadeOnFall: false,
+    circleShrinkOnFall: false,
+    circleLevelControlsSize: false,
   }
   let result = updateAudioRouteSignalState({
     previousState: null,
@@ -163,6 +167,10 @@ test("updates route signals with adaptive trigger state", () => {
     gain: 1,
     cooldownMs: 100,
     circleColor: "#00d1ff",
+    circleGrowOnRise: false,
+    circleFadeOnFall: false,
+    circleShrinkOnFall: false,
+    circleLevelControlsSize: false,
   }
   let result = updateAudioRouteSignalState({
     previousState: null,

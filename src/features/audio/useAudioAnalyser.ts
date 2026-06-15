@@ -26,6 +26,8 @@ export type AudioWorkletTriggerEvent = {
   audioInstanceId: string
   color: string
   level: number
+  riseAmount: number
+  fallAmount: number
   timestamp: number
 }
 
@@ -203,6 +205,8 @@ export function useAudioAnalyser(options: UseAudioAnalyserOptions = {}) {
               audioInstanceId: route.audioInstanceId,
               color: route.settings.circleColor,
               level: result.level,
+              riseAmount: result.riseAmount,
+              fallAmount: result.fallAmount,
               timestamp,
             })
           }
