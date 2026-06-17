@@ -171,6 +171,17 @@ export class CenterShapeModule implements StageModule {
     this.syncShape()
   }
 
+  removeAudioInstance(audioInstanceId: string) {
+    this.audioSettingsByInstanceId.delete(audioInstanceId)
+    this.routeSignalsByInstanceId.delete(audioInstanceId)
+
+    if (this.activeAudioInstanceId === audioInstanceId) {
+      this.activeAudioInstanceId = this.getFirstEnabledAudioInstanceId()
+    }
+
+    this.syncShape()
+  }
+
   receiveAudioRouteSignal(routeSignal: AudioRouteSignal) {
     this.routeSignalsByInstanceId.set(routeSignal.audioInstanceId, routeSignal)
 

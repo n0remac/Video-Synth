@@ -1,7 +1,12 @@
 import type { PatchDefinition } from "@/features/stage/patches/patchTypes"
 import type { AudioControlledShapeSettings } from "@/features/shapeGenerator/shapeGeneratorTypes"
 
-export type VisualizerClientRole = "controller" | "color" | "audio" | "stage"
+export type VisualizerClientRole =
+  | "controller"
+  | "color"
+  | "audio"
+  | "stage"
+  | "songs"
 
 export type PointerMessage = {
   type: "pointer"
@@ -62,7 +67,7 @@ export type AudioAnalysisFrame = {
   high: number
   dominantBin: number
   spectrum: number[]
-  source?: "audio-worklet" | "analyser"
+  source?: "audio-worklet" | "analyser" | "song"
   sequence?: number
   analysisRateHz?: number
   routes?: AudioRouteSignal[]
@@ -87,6 +92,52 @@ export type AudioSettingsUpdateMessage = {
   userId: string
   audioInstanceId: string
   settings: AudioCircleSettings
+  timestamp: number
+}
+
+export type AudioInstanceSummary = {
+  audioInstanceId: string
+  updatedAt: number
+}
+
+export type AudioInstancesSnapshotMessage = {
+  type: "audio_instances_snapshot"
+  instances: AudioInstanceSummary[]
+  timestamp: number
+}
+
+export type AudioSettingsDeleteMessage = {
+  type: "audio_settings_delete"
+  audioInstanceId: string
+  timestamp: number
+}
+
+export type SongCommandName = "load" | "play" | "pause" | "seek" | "stop"
+
+export type SongCommandMessage = {
+  type: "song_command"
+  command: SongCommandName
+  songId?: string
+  timeMs?: number
+  timestamp: number
+}
+
+export type SongTransportState =
+  | "idle"
+  | "loading"
+  | "ready"
+  | "playing"
+  | "paused"
+  | "ended"
+  | "error"
+
+export type SongTransportUpdateMessage = {
+  type: "song_transport_update"
+  songId?: string
+  state: SongTransportState
+  timeMs: number
+  durationMs: number
+  error?: string
   timestamp: number
 }
 
@@ -166,6 +217,10 @@ export type VisualizerMessage =
   | StageAudioFrameMessage
   | AudioSettingsSnapshotMessage
   | AudioSettingsUpdateMessage
+  | AudioInstancesSnapshotMessage
+  | AudioSettingsDeleteMessage
+  | SongCommandMessage
+  | SongTransportUpdateMessage
   | ColorControlMessage
   | UsersSnapshotMessage
   | UserJoinedMessage

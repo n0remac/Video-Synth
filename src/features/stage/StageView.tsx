@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect } from "react"
 import { useAudioAnalyser } from "@/features/audio/useAudioAnalyser"
 import { useStageRuntime } from "./useStageRuntime"
 
@@ -10,12 +11,30 @@ export function StageView() {
     connectionStatus,
     handleAudioTrigger,
     sendAudioFrame,
+    songTransport,
+    stopSong,
   } = useStageRuntime()
   const audio = useAudioAnalyser({
     routes: audioRoutes,
     onFrame: sendAudioFrame,
     onTrigger: handleAudioTrigger,
   })
+
+  useEffect(() => {
+    if (songTransport.state === "playing" && audio.running) {
+      audio.stop()
+    }
+  }, [audio, songTransport.state])
+
+  function toggleMicrophone() {
+    if (audio.running) {
+      audio.stop()
+      return
+    }
+
+    stopSong()
+    void audio.start()
+  }
 
   return (
     <main className="stage-shell">
@@ -26,12 +45,15 @@ export function StageView() {
       <div className="stage-audio-control">
         <button
           type="button"
-          onClick={audio.running ? audio.stop : audio.start}
+          onClick={toggleMicrophone}
           data-active={audio.running}
         >
           {audio.running ? "Stop Audio" : "Start Audio"}
         </button>
         <span data-status={audio.status}>{audio.status}</span>
+        <span data-status={songTransport.state}>
+          song {songTransport.state}
+        </span>
       </div>
     </main>
   )

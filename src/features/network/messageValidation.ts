@@ -1,9 +1,13 @@
 import type {
   AudioSettingsSnapshotMessage,
+  AudioInstancesSnapshotMessage,
+  AudioSettingsDeleteMessage,
   AudioSettingsUpdateMessage,
   ColorControlMessage,
   ClearStageMessage,
   PointerMessage,
+  SongCommandMessage,
+  SongTransportUpdateMessage,
   StageAudioFrameMessage,
   UserJoinedMessage,
   UserLeftMessage,
@@ -164,7 +168,8 @@ function isAudioAnalysisFrame(value: unknown) {
     value.spectrum.every(isNormalized) &&
     (value.source === undefined ||
       value.source === "audio-worklet" ||
-      value.source === "analyser") &&
+      value.source === "analyser" ||
+      value.source === "song") &&
     (value.sequence === undefined || isFiniteNumber(value.sequence)) &&
     (value.analysisRateHz === undefined ||
       isFiniteNumber(value.analysisRateHz)) &&
@@ -183,7 +188,8 @@ export function isPointerMessage(value: unknown): value is PointerMessage {
       value.userRole === "controller" ||
       value.userRole === "color" ||
       value.userRole === "audio" ||
-      value.userRole === "stage") &&
+      value.userRole === "stage" ||
+      value.userRole === "songs") &&
     isNormalized(value.x) &&
     isNormalized(value.y) &&
     isFiniteNumber(value.vx) &&
@@ -234,6 +240,34 @@ export function isAudioSettingsUpdateMessage(
   )
 }
 
+export function isAudioInstancesSnapshotMessage(
+  value: unknown,
+): value is AudioInstancesSnapshotMessage {
+  return (
+    isRecord(value) &&
+    value.type === "audio_instances_snapshot" &&
+    Array.isArray(value.instances) &&
+    value.instances.every(
+      (instance) =>
+        isRecord(instance) &&
+        isAudioInstanceId(instance.audioInstanceId) &&
+        isFiniteNumber(instance.updatedAt),
+    ) &&
+    isFiniteNumber(value.timestamp)
+  )
+}
+
+export function isAudioSettingsDeleteMessage(
+  value: unknown,
+): value is AudioSettingsDeleteMessage {
+  return (
+    isRecord(value) &&
+    value.type === "audio_settings_delete" &&
+    isAudioInstanceId(value.audioInstanceId) &&
+    isFiniteNumber(value.timestamp)
+  )
+}
+
 export function isColorControlMessage(
   value: unknown,
 ): value is ColorControlMessage {
@@ -256,6 +290,62 @@ export function isColorControlMessage(
     isNormalized(value.y) &&
     typeof value.baseColor === "string" &&
     isFiniteNumber(value.amount) &&
+    isFiniteNumber(value.timestamp)
+  )
+}
+
+function isSongId(value: unknown) {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 80 &&
+    /^[A-Za-z0-9_-]+$/.test(value)
+  )
+}
+
+export function isSongCommandMessage(
+  value: unknown,
+): value is SongCommandMessage {
+  if (!isRecord(value) || value.type !== "song_command") {
+    return false
+  }
+
+  const hasSongId = value.songId !== undefined
+  const hasTimeMs = value.timeMs !== undefined
+
+  return (
+    (value.command === "load" ||
+      value.command === "play" ||
+      value.command === "pause" ||
+      value.command === "seek" ||
+      value.command === "stop") &&
+    (value.command === "load" || value.command === "play" ? hasSongId : true) &&
+    (!hasSongId || isSongId(value.songId)) &&
+    (!hasTimeMs || (isFiniteNumber(value.timeMs) && value.timeMs >= 0)) &&
+    (value.command !== "seek" || hasTimeMs) &&
+    isFiniteNumber(value.timestamp)
+  )
+}
+
+export function isSongTransportUpdateMessage(
+  value: unknown,
+): value is SongTransportUpdateMessage {
+  return (
+    isRecord(value) &&
+    value.type === "song_transport_update" &&
+    (value.songId === undefined || isSongId(value.songId)) &&
+    (value.state === "idle" ||
+      value.state === "loading" ||
+      value.state === "ready" ||
+      value.state === "playing" ||
+      value.state === "paused" ||
+      value.state === "ended" ||
+      value.state === "error") &&
+    isFiniteNumber(value.timeMs) &&
+    value.timeMs >= 0 &&
+    isFiniteNumber(value.durationMs) &&
+    value.durationMs >= 0 &&
+    (value.error === undefined || typeof value.error === "string") &&
     isFiniteNumber(value.timestamp)
   )
 }
@@ -288,7 +378,8 @@ export function isUserJoinedMessage(value: unknown): value is UserJoinedMessage 
       value.role === "controller" ||
       value.role === "color" ||
       value.role === "audio" ||
-      value.role === "stage") &&
+      value.role === "stage" ||
+      value.role === "songs") &&
     isFiniteNumber(value.timestamp)
   )
 }
@@ -340,6 +431,10 @@ export function parseVisualizerMessage(
     isStageAudioFrameMessage(value) ||
     isAudioSettingsSnapshotMessage(value) ||
     isAudioSettingsUpdateMessage(value) ||
+    isAudioInstancesSnapshotMessage(value) ||
+    isAudioSettingsDeleteMessage(value) ||
+    isSongCommandMessage(value) ||
+    isSongTransportUpdateMessage(value) ||
     isColorControlMessage(value) ||
     isUsersSnapshotMessage(value) ||
     isUserJoinedMessage(value) ||

@@ -23,6 +23,9 @@ export function ControllerNav() {
       >
         Audio
       </Link>
+      <Link href="/songs" data-active={pathname === "/songs"}>
+        Songs
+      </Link>
       <Link href="/stage" data-active={pathname === "/stage"}>
         Stage
       </Link>

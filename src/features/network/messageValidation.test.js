@@ -83,6 +83,37 @@ test("rejects audio settings updates with invalid audio instance ids", () => {
   assert.equal(message, null)
 })
 
+test("parses audio instance snapshots", () => {
+  const message = parseVisualizerMessage(
+    JSON.stringify({
+      type: "audio_instances_snapshot",
+      instances: [
+        {
+          audioInstanceId: "audio-1",
+          updatedAt: 1000,
+        },
+      ],
+      timestamp: 1001,
+    }),
+  )
+
+  assert.equal(message?.type, "audio_instances_snapshot")
+  assert.equal(message?.instances[0]?.audioInstanceId, "audio-1")
+})
+
+test("parses audio settings delete messages", () => {
+  const message = parseVisualizerMessage(
+    JSON.stringify({
+      type: "audio_settings_delete",
+      audioInstanceId: "audio-1",
+      timestamp: 1000,
+    }),
+  )
+
+  assert.equal(message?.type, "audio_settings_delete")
+  assert.equal(message?.audioInstanceId, "audio-1")
+})
+
 test("parses audio worklet frames with route signals", () => {
   const message = parseVisualizerMessage(
     JSON.stringify({
@@ -123,4 +154,73 @@ test("parses audio worklet frames with route signals", () => {
   assert.equal(message?.type, "stage_audio_frame")
   assert.equal(message?.frame.source, "audio-worklet")
   assert.equal(message?.frame.routes?.[0]?.triggered, true)
+})
+
+test("parses song audio frames", () => {
+  const message = parseVisualizerMessage(
+    JSON.stringify({
+      type: "stage_audio_frame",
+      frame: {
+        volume: 0.2,
+        low: 0.3,
+        mid: 0.4,
+        high: 0.5,
+        dominantBin: 12,
+        spectrum: [0.1, 0.2, 0.3],
+        source: "song",
+        sequence: 7,
+        analysisRateHz: 60,
+        routes: [],
+        timestamp: 1000,
+      },
+      timestamp: 1001,
+    }),
+  )
+
+  assert.equal(message?.type, "stage_audio_frame")
+  assert.equal(message?.frame.source, "song")
+})
+
+test("parses song commands", () => {
+  const message = parseVisualizerMessage(
+    JSON.stringify({
+      type: "song_command",
+      command: "play",
+      songId: "song_1",
+      timeMs: 1200,
+      timestamp: 1000,
+    }),
+  )
+
+  assert.equal(message?.type, "song_command")
+  assert.equal(message?.command, "play")
+})
+
+test("rejects invalid song commands", () => {
+  const message = parseVisualizerMessage(
+    JSON.stringify({
+      type: "song_command",
+      command: "play",
+      songId: "../song",
+      timestamp: 1000,
+    }),
+  )
+
+  assert.equal(message, null)
+})
+
+test("parses song transport updates", () => {
+  const message = parseVisualizerMessage(
+    JSON.stringify({
+      type: "song_transport_update",
+      songId: "song_1",
+      state: "playing",
+      timeMs: 1200,
+      durationMs: 3000,
+      timestamp: 1000,
+    }),
+  )
+
+  assert.equal(message?.type, "song_transport_update")
+  assert.equal(message?.state, "playing")
 })

@@ -1,8 +1,12 @@
 import type {
   AudioSettingsUpdateMessage,
-  StageAudioFrameMessage,
   ColorControlMessage,
   PointerMessage,
+  AudioSettingsDeleteMessage,
+  SongCommandMessage,
+  SongTransportUpdateMessage,
+  StageAudioFrameMessage,
+  VisualizerClientRole,
 } from "./protocolTypes"
 
 export function createPointerMessage(input: PointerMessage): PointerMessage {
@@ -54,6 +58,16 @@ export function createAudioSettingsUpdateMessage(
   }
 }
 
+export function createAudioSettingsDeleteMessage(
+  input: AudioSettingsDeleteMessage,
+): AudioSettingsDeleteMessage {
+  return {
+    type: "audio_settings_delete",
+    audioInstanceId: input.audioInstanceId,
+    timestamp: input.timestamp,
+  }
+}
+
 export function createStageAudioFrameMessage(
   input: StageAudioFrameMessage,
 ): StageAudioFrameMessage {
@@ -64,8 +78,34 @@ export function createStageAudioFrameMessage(
   }
 }
 
+export function createSongCommandMessage(
+  input: SongCommandMessage,
+): SongCommandMessage {
+  return {
+    type: "song_command",
+    command: input.command,
+    songId: input.songId,
+    timeMs: input.timeMs,
+    timestamp: input.timestamp,
+  }
+}
+
+export function createSongTransportUpdateMessage(
+  input: SongTransportUpdateMessage,
+): SongTransportUpdateMessage {
+  return {
+    type: "song_transport_update",
+    songId: input.songId,
+    state: input.state,
+    timeMs: input.timeMs,
+    durationMs: input.durationMs,
+    error: input.error,
+    timestamp: input.timestamp,
+  }
+}
+
 export function getVisualizerSocketUrl(
-  role?: "controller" | "color" | "audio" | "stage",
+  role?: VisualizerClientRole,
   options: { audioInstanceId?: string } = {},
 ) {
   if (typeof window === "undefined") {

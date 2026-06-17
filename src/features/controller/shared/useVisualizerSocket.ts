@@ -6,10 +6,15 @@ import { parseVisualizerMessage } from "@/features/network/messageValidation"
 import type {
   AudioAnalysisFrame,
   AudioCircleSettings,
+  AudioInstanceSummary,
+  AudioSettingsDeleteMessage,
   AudioSettingsUpdateMessage,
   ColorControlMessage,
   ClearStageMessage,
   PointerMessage,
+  SongCommandMessage,
+  SongTransportUpdateMessage,
+  VisualizerClientRole,
   VisualizerUserSummary,
 } from "@/features/network/protocolTypes"
 
@@ -21,7 +26,7 @@ type VisualizerSocketOptions = {
 }
 
 export function useVisualizerSocket(
-  role: "controller" | "color" | "audio" = "controller",
+  role: VisualizerClientRole = "controller",
   options: VisualizerSocketOptions = {},
 ) {
   const socketRef = useRef<WebSocket | null>(null)
@@ -34,8 +39,11 @@ export function useVisualizerSocket(
   const [users, setUsers] = useState<VisualizerUserSummary[]>([])
   const [audioSettings, setAudioSettings] =
     useState<AudioCircleSettings | null>(null)
+  const [audioInstances, setAudioInstances] = useState<AudioInstanceSummary[]>([])
   const [stageAudioFrame, setStageAudioFrame] =
     useState<AudioAnalysisFrame | null>(null)
+  const [songTransport, setSongTransport] =
+    useState<SongTransportUpdateMessage | null>(null)
 
   useEffect(() => {
     onStageAudioFrameRef.current = options.onStageAudioFrame
@@ -114,6 +122,22 @@ export function useVisualizerSocket(
         }
       }
 
+      if (message?.type === "audio_instances_snapshot") {
+        setAudioInstances(message.instances)
+      }
+
+      if (message?.type === "audio_settings_delete") {
+        setAudioInstances((currentInstances) =>
+          currentInstances.filter(
+            (instance) => instance.audioInstanceId !== message.audioInstanceId,
+          ),
+        )
+
+        if (message.audioInstanceId === audioInstanceId) {
+          setAudioSettings(null)
+        }
+      }
+
       if (message?.type === "stage_audio_frame") {
         onStageAudioFrameRef.current?.(message.frame)
 
@@ -125,6 +149,10 @@ export function useVisualizerSocket(
           lastStageAudioFrameStateAtRef.current = message.frame.timestamp
           setStageAudioFrame(message.frame)
         }
+      }
+
+      if (message?.type === "song_transport_update") {
+        setSongTransport(message)
       }
 
       if (message?.type === "user_left") {
@@ -173,6 +201,19 @@ export function useVisualizerSocket(
     [],
   )
 
+  const sendAudioSettingsDelete = useCallback(
+    (message: AudioSettingsDeleteMessage) => {
+      const socket = socketRef.current
+
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        return
+      }
+
+      socket.send(JSON.stringify(message))
+    },
+    [],
+  )
+
   const clearStage = useCallback(() => {
     const socket = socketRef.current
 
@@ -189,6 +230,16 @@ export function useVisualizerSocket(
     socket.send(JSON.stringify(message))
   }, [userId])
 
+  const sendSongCommand = useCallback((message: SongCommandMessage) => {
+    const socket = socketRef.current
+
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return
+    }
+
+    socket.send(JSON.stringify(message))
+  }, [])
+
   return {
     status,
     connected: status === "connected",
@@ -196,10 +247,14 @@ export function useVisualizerSocket(
     assignedColor,
     users,
     audioSettings,
+    audioInstances,
     stageAudioFrame,
+    songTransport,
     sendPointer,
     sendColorControl,
     sendAudioSettingsUpdate,
+    sendAudioSettingsDelete,
+    sendSongCommand,
     clearStage,
   }
 }

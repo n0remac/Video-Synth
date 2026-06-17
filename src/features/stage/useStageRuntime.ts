@@ -9,9 +9,20 @@ import type {
   AudioCircleSettings,
   AudioRouteSignal,
   PointerMessage,
+  SongCommandMessage,
+  SongTransportUpdateMessage,
 } from "@/features/network/protocolTypes"
 import type { AudioWorkletTriggerEvent } from "@/features/audio/useAudioAnalyser"
 import { getVisualizerSocketUrl } from "@/features/network/protocol"
+import {
+  sampleSpectrumRange,
+  updateAudioRouteSignalState,
+} from "@/features/controller/audio/audioRoutingLogic"
+import type { AudioRouteFollowerState } from "@/features/controller/audio/audioRoutingLogic"
+import {
+  getFrameAtTime,
+} from "@/features/songs/songAnalysisLogic"
+import type { SongAnalysis } from "@/features/songs/songTypes"
 import { stageConfig } from "./stageConfig"
 import { createCamera, resizeCameraToViewport } from "./render/createCamera"
 import { startAnimationLoop } from "./render/animationLoop"
@@ -23,6 +34,14 @@ import { RipplePaintModule } from "./modules/ripplePaint"
 import { TrailPaintModule } from "./modules/trailPaint"
 
 type ConnectionStatus = "connecting" | "connected" | "disconnected"
+
+const idleSongTransport: SongTransportUpdateMessage = {
+  type: "song_transport_update",
+  state: "idle",
+  timeMs: 0,
+  durationMs: 0,
+  timestamp: 0,
+}
 
 type PointerWorld = {
   x: number
@@ -92,15 +111,26 @@ export function useStageRuntime() {
     null,
   )
   const audioRouteSettingsRef = useRef(new Map<string, AudioCircleSettings>())
+  const songAnalysisRef = useRef<SongAnalysis | null>(null)
+  const songAudioRef = useRef<HTMLAudioElement | null>(null)
+  const songAnimationFrameRef = useRef<number | null>(null)
+  const songRouteStatesRef = useRef(new Map<string, AudioRouteFollowerState>())
+  const songCommandHandlerRef = useRef<
+    ((message: SongCommandMessage) => void) | null
+  >(null)
+  const lastSongTransportUpdateAtRef = useRef(0)
+  const songSequenceRef = useRef(0)
   const [connectionStatus, setConnectionStatus] =
     useState<ConnectionStatus>("connecting")
   const [audioRoutes, setAudioRoutes] = useState<StageAudioRouteConfig[]>([])
+  const [songTransport, setSongTransport] =
+    useState<SongTransportUpdateMessage>(idleSongTransport)
 
   const handleAudioTrigger = useCallback((event: AudioWorkletTriggerEvent) => {
     audioTriggerHandlerRef.current?.(event)
   }, [])
 
-  function sendAudioFrame(frame: AudioAnalysisFrame) {
+  const sendAudioFrame = useCallback((frame: AudioAnalysisFrame) => {
     audioFrameHandlerRef.current?.(frame)
 
     const socket = socketRef.current
@@ -118,7 +148,306 @@ export function useStageRuntime() {
         }),
       ),
     )
-  }
+  }, [])
+
+  const publishSongTransport = useCallback(
+    (update: Omit<SongTransportUpdateMessage, "type" | "timestamp">) => {
+      const message: SongTransportUpdateMessage = {
+        type: "song_transport_update",
+        ...update,
+        timestamp: Date.now(),
+      }
+
+      setSongTransport(message)
+
+      const socket = socketRef.current
+
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify(message))
+      }
+    },
+    [],
+  )
+
+  const stopSongAnalysisLoop = useCallback(() => {
+    if (songAnimationFrameRef.current !== null) {
+      cancelAnimationFrame(songAnimationFrameRef.current)
+      songAnimationFrameRef.current = null
+    }
+  }, [])
+
+  const resetSongRouteState = useCallback(() => {
+    songRouteStatesRef.current.clear()
+    songSequenceRef.current = 0
+  }, [])
+
+  const emitSongFrame = useCallback(() => {
+    const audio = songAudioRef.current
+    const analysis = songAnalysisRef.current
+
+    if (!audio || !analysis || audio.paused || audio.ended) {
+      return
+    }
+
+    const timeMs = audio.currentTime * 1000
+    const analysisFrame = getFrameAtTime(analysis, timeMs)
+
+    if (analysisFrame) {
+      const routes: AudioRouteSignal[] = []
+      const triggers: AudioWorkletTriggerEvent[] = []
+
+      audioRouteSettingsRef.current.forEach((settings, audioInstanceId) => {
+        const rawLevel = sampleSpectrumRange(
+          analysisFrame.controlSpectrum,
+          settings.sampleStartPercent,
+          settings.sampleEndPercent,
+        )
+        const result = updateAudioRouteSignalState({
+          previousState:
+            songRouteStatesRef.current.get(audioInstanceId) ?? null,
+          sampleValue: rawLevel,
+          settings,
+          timestamp: timeMs,
+        })
+
+        songRouteStatesRef.current.set(audioInstanceId, result.follower)
+
+        const routeSignal = {
+          audioInstanceId,
+          sampleStartPercent: settings.sampleStartPercent,
+          sampleEndPercent: settings.sampleEndPercent,
+          level: result.level,
+          fastLevel: result.fastLevel,
+          slowLevel: result.slowLevel,
+          floor: result.floor,
+          peak: result.peak,
+          riseAmount: result.riseAmount,
+          fallAmount: result.fallAmount,
+          riseRate: result.riseRate,
+          fallRate: result.fallRate,
+          triggered: result.triggered,
+        }
+
+        routes.push(routeSignal)
+
+        if (result.triggered) {
+          triggers.push({
+            audioInstanceId,
+            color: settings.circleColor,
+            level: result.level,
+            riseAmount: result.riseAmount,
+            fallAmount: result.fallAmount,
+            timestamp: timeMs,
+          })
+        }
+      })
+
+      const frame: AudioAnalysisFrame = {
+        volume: analysisFrame.volume,
+        low: analysisFrame.low,
+        mid: analysisFrame.mid,
+        high: analysisFrame.high,
+        dominantBin: analysisFrame.dominantBin,
+        spectrum: analysisFrame.spectrum,
+        source: "song",
+        sequence: songSequenceRef.current,
+        analysisRateHz: analysis.analysisRateHz,
+        routes,
+        timestamp: timeMs,
+      }
+
+      songSequenceRef.current += 1
+      sendAudioFrame(frame)
+      triggers.forEach((trigger) => handleAudioTrigger(trigger))
+    }
+
+    if (timeMs - lastSongTransportUpdateAtRef.current >= 250) {
+      lastSongTransportUpdateAtRef.current = timeMs
+      publishSongTransport({
+        songId: analysis.songId,
+        state: "playing",
+        timeMs,
+        durationMs: analysis.durationMs,
+      })
+    }
+
+    songAnimationFrameRef.current = requestAnimationFrame(emitSongFrame)
+  }, [handleAudioTrigger, publishSongTransport, sendAudioFrame])
+
+  const stopSong = useCallback(() => {
+    stopSongAnalysisLoop()
+    songAudioRef.current?.pause()
+    if (songAudioRef.current) {
+      songAudioRef.current.currentTime = 0
+    }
+    resetSongRouteState()
+    publishSongTransport({
+      state: "idle",
+      timeMs: 0,
+      durationMs: songAnalysisRef.current?.durationMs ?? 0,
+    })
+  }, [publishSongTransport, resetSongRouteState, stopSongAnalysisLoop])
+
+  const loadSong = useCallback(
+    async (songId: string, playAfterLoad: boolean, startTimeMs?: number) => {
+      stopSongAnalysisLoop()
+      resetSongRouteState()
+      publishSongTransport({
+        songId,
+        state: "loading",
+        timeMs: startTimeMs ?? 0,
+        durationMs: 0,
+      })
+
+      try {
+        const response = await fetch(`/api/songs/${songId}/analysis`, {
+          cache: "no-store",
+        })
+
+        if (!response.ok) {
+          throw new Error("Song analysis is missing. Scan the song first.")
+        }
+
+        const analysis = (await response.json()) as SongAnalysis
+        const audio = songAudioRef.current ?? new Audio()
+        songAudioRef.current = audio
+        audio.src = `/api/songs/${songId}/audio`
+        audio.preload = "auto"
+        audio.currentTime = Math.max(0, (startTimeMs ?? 0) / 1000)
+        audio.onended = () => {
+          stopSongAnalysisLoop()
+          resetSongRouteState()
+          publishSongTransport({
+            songId,
+            state: "ended",
+            timeMs: analysis.durationMs,
+            durationMs: analysis.durationMs,
+          })
+        }
+
+        songAnalysisRef.current = analysis
+        publishSongTransport({
+          songId,
+          state: "ready",
+          timeMs: audio.currentTime * 1000,
+          durationMs: analysis.durationMs,
+        })
+
+        if (playAfterLoad) {
+          await audio.play()
+          publishSongTransport({
+            songId,
+            state: "playing",
+            timeMs: audio.currentTime * 1000,
+            durationMs: analysis.durationMs,
+          })
+          songAnimationFrameRef.current = requestAnimationFrame(emitSongFrame)
+        }
+      } catch (error) {
+        publishSongTransport({
+          songId,
+          state: "error",
+          timeMs: 0,
+          durationMs: 0,
+          error:
+            error instanceof Error ? error.message : "Unable to load song.",
+        })
+      }
+    },
+    [
+      emitSongFrame,
+      publishSongTransport,
+      resetSongRouteState,
+      stopSongAnalysisLoop,
+    ],
+  )
+
+  const handleSongCommand = useCallback(
+    (message: SongCommandMessage) => {
+      const audio = songAudioRef.current
+      const analysis = songAnalysisRef.current
+
+      if (message.command === "load" && message.songId) {
+        void loadSong(message.songId, false, message.timeMs)
+        return
+      }
+
+      if (message.command === "play" && message.songId) {
+        if (analysis?.songId === message.songId && audio) {
+          if (message.timeMs !== undefined) {
+            audio.currentTime = message.timeMs / 1000
+            resetSongRouteState()
+          }
+          void audio
+            .play()
+            .then(() => {
+              publishSongTransport({
+                songId: message.songId,
+                state: "playing",
+                timeMs: audio.currentTime * 1000,
+                durationMs: analysis.durationMs,
+              })
+              stopSongAnalysisLoop()
+              songAnimationFrameRef.current = requestAnimationFrame(emitSongFrame)
+            })
+            .catch((error) => {
+              publishSongTransport({
+                songId: message.songId,
+                state: "error",
+                timeMs: audio.currentTime * 1000,
+                durationMs: analysis.durationMs,
+                error:
+                  error instanceof Error ? error.message : "Unable to play song.",
+              })
+            })
+          return
+        }
+
+        void loadSong(message.songId, true, message.timeMs)
+        return
+      }
+
+      if (message.command === "pause") {
+        audio?.pause()
+        stopSongAnalysisLoop()
+        publishSongTransport({
+          songId: analysis?.songId,
+          state: "paused",
+          timeMs: audio ? audio.currentTime * 1000 : 0,
+          durationMs: analysis?.durationMs ?? 0,
+        })
+        return
+      }
+
+      if (message.command === "seek" && audio && analysis) {
+        audio.currentTime = (message.timeMs ?? 0) / 1000
+        resetSongRouteState()
+        publishSongTransport({
+          songId: analysis.songId,
+          state: audio.paused ? "paused" : "playing",
+          timeMs: audio.currentTime * 1000,
+          durationMs: analysis.durationMs,
+        })
+
+        if (!audio.paused && songAnimationFrameRef.current === null) {
+          songAnimationFrameRef.current = requestAnimationFrame(emitSongFrame)
+        }
+        return
+      }
+
+      if (message.command === "stop") {
+        stopSong()
+      }
+    },
+    [
+      emitSongFrame,
+      loadSong,
+      publishSongTransport,
+      resetSongRouteState,
+      stopSong,
+      stopSongAnalysisLoop,
+    ],
+  )
 
   const api = useMemo(
     () => ({
@@ -127,8 +456,17 @@ export function useStageRuntime() {
       connectionStatus,
       handleAudioTrigger,
       sendAudioFrame,
+      songTransport,
+      stopSong,
     }),
-    [audioRoutes, connectionStatus, handleAudioTrigger],
+    [
+      audioRoutes,
+      connectionStatus,
+      handleAudioTrigger,
+      sendAudioFrame,
+      songTransport,
+      stopSong,
+    ],
   )
 
   useEffect(() => {
@@ -136,6 +474,10 @@ export function useStageRuntime() {
       audioRoutes.map((route) => [route.audioInstanceId, route.settings]),
     )
   }, [audioRoutes])
+
+  useEffect(() => {
+    songCommandHandlerRef.current = handleSongCommand
+  }, [handleSongCommand])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -220,6 +562,11 @@ export function useStageRuntime() {
         return
       }
 
+      if (message.type === "song_command") {
+        songCommandHandlerRef.current?.(message)
+        return
+      }
+
       if (
         message.type === "pointer" &&
         message.visualMode === "circle" &&
@@ -276,6 +623,16 @@ export function useStageRuntime() {
           )
         })
         centerShape.receiveAudioSettings(message.audioInstanceId, message.settings)
+      }
+
+      if (message.type === "audio_settings_delete") {
+        setAudioRoutes((currentRoutes) =>
+          currentRoutes.filter(
+            (route) => route.audioInstanceId !== message.audioInstanceId,
+          ),
+        )
+        songRouteStatesRef.current.delete(message.audioInstanceId)
+        centerShape.removeAudioInstance(message.audioInstanceId)
       }
     })
 
@@ -350,6 +707,9 @@ export function useStageRuntime() {
       audioFrameHandlerRef.current = null
       socket.close()
       socketRef.current = null
+      stopSongAnalysisLoop()
+      songAudioRef.current?.pause()
+      songAudioRef.current = null
       window.removeEventListener("resize", handleResize)
       activeCanvas.removeEventListener("pointerdown", handlePointerDown)
       activeCanvas.removeEventListener("pointermove", handlePointerMove)

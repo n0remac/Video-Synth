@@ -1,7 +1,11 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { createAudioSettingsUpdateMessage } from "@/features/network/protocol"
+import { useRouter } from "next/navigation"
+import {
+  createAudioSettingsDeleteMessage,
+  createAudioSettingsUpdateMessage,
+} from "@/features/network/protocol"
 import type {
   AudioAnalysisFrame,
   AudioCircleSettings,
@@ -676,11 +680,24 @@ function formatShapeControlValue(value: number, step: number) {
   return String(Number(value.toFixed(2)))
 }
 
+function formatAudioFrameSource(frame: AudioAnalysisFrame | null) {
+  if (!frame) {
+    return "None"
+  }
+
+  if (frame.source === "song") {
+    return "Song"
+  }
+
+  return "Stage"
+}
+
 type AudioControllerViewProps = {
   audioInstanceId: string
 }
 
 export function AudioControllerView({ audioInstanceId }: AudioControllerViewProps) {
+  const router = useRouter()
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const levelMotionCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const adaptiveTriggerRef = useRef<AdaptiveTriggerState | null>(null)
@@ -695,6 +712,8 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
     useState<AudioLevelMotionState | null>(null)
   const [rawSampleValue, setRawSampleValue] = useState(0)
   const [sampleValue, setSampleValue] = useState(0)
+  const [pendingDeletedAudioInstanceId, setPendingDeletedAudioInstanceId] =
+    useState<string | null>(null)
   const displayedTriggerLevel =
     settings.triggerMode === "adaptive" && adaptiveTriggerState
       ? adaptiveTriggerState.triggerLevel
@@ -794,6 +813,10 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
     onStageAudioFrame: handleStageAudioFrame,
   })
   const stageAudioFrame = socket.stageAudioFrame
+  const audioInstances = socket.audioInstances
+  const selectedInstanceExists = audioInstances.some(
+    (instance) => instance.audioInstanceId === audioInstanceId,
+  )
 
   useEffect(() => {
     if (socket.audioSettings) {
@@ -806,6 +829,38 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
       })
     }
   }, [socket.audioSettings])
+
+  useEffect(() => {
+    if (pendingDeletedAudioInstanceId !== audioInstanceId) {
+      return
+    }
+
+    const stillExists = audioInstances.some(
+      (instance) => instance.audioInstanceId === pendingDeletedAudioInstanceId,
+    )
+
+    if (stillExists) {
+      return
+    }
+
+    const nextAudioInstance = audioInstances.find(
+      (instance) => instance.audioInstanceId !== pendingDeletedAudioInstanceId,
+    )
+
+    setPendingDeletedAudioInstanceId(null)
+
+    if (nextAudioInstance) {
+      router.replace(`/audio-controller/${nextAudioInstance.audioInstanceId}`)
+      return
+    }
+
+    router.replace("/audio-controller")
+  }, [
+    audioInstanceId,
+    audioInstances,
+    pendingDeletedAudioInstanceId,
+    router,
+  ])
 
   useEffect(() => {
     adaptiveTriggerRef.current = null
@@ -852,6 +907,23 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
 
       return nextSettings
     })
+  }
+
+  function deleteCurrentAudioController() {
+    const confirmed = window.confirm(`Delete audio controller "${audioInstanceId}"?`)
+
+    if (!confirmed) {
+      return
+    }
+
+    socket.sendAudioSettingsDelete(
+      createAudioSettingsDeleteMessage({
+        type: "audio_settings_delete",
+        audioInstanceId,
+        timestamp: Date.now(),
+      }),
+    )
+    setPendingDeletedAudioInstanceId(audioInstanceId)
   }
 
   function updateCenterShape(patch: Partial<AudioControlledShapeSettings>) {
@@ -972,6 +1044,44 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
         </div>
       </header>
 
+      <section className="audio-instance-panel">
+        <label className="control-field">
+          <span>
+            Controller <strong>{audioInstanceId}</strong>
+          </span>
+          <select
+            value={selectedInstanceExists ? audioInstanceId : ""}
+            onChange={(event) => {
+              const nextAudioInstanceId = event.currentTarget.value
+
+              if (nextAudioInstanceId) {
+                router.push(`/audio-controller/${nextAudioInstanceId}`)
+              }
+            }}
+          >
+            {!selectedInstanceExists ? (
+              <option value="">{audioInstanceId}</option>
+            ) : null}
+            {audioInstances.map((instance) => (
+              <option
+                key={instance.audioInstanceId}
+                value={instance.audioInstanceId}
+              >
+                {instance.audioInstanceId}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="button"
+          className="audio-delete-button"
+          disabled={pendingDeletedAudioInstanceId === audioInstanceId}
+          onClick={deleteCurrentAudioController}
+        >
+          {pendingDeletedAudioInstanceId === audioInstanceId ? "Deleting" : "Delete"}
+        </button>
+      </section>
+
       <section className="audio-spectrum-panel">
         <canvas ref={canvasRef} className="audio-spectrum-canvas" />
       </section>
@@ -979,7 +1089,7 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
       <section className="audio-control-panel">
         <div className="audio-meter">
           <span>Source</span>
-          <strong>{stageAudioFrame ? "Stage" : "None"}</strong>
+          <strong>{formatAudioFrameSource(stageAudioFrame)}</strong>
         </div>
         <div className="audio-meter">
           <span>Raw Avg</span>

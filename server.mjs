@@ -21,7 +21,7 @@ const userColors = [
   "#f7f7ff",
 ]
 
-const clientRoles = new Set(["controller", "color", "audio", "stage"])
+const clientRoles = new Set(["controller", "color", "audio", "stage", "songs"])
 
 const shapeParameterNames = [
   "angleBias",
@@ -126,6 +126,19 @@ function setAudioCircleSettings(audioInstanceId, settings) {
   return state
 }
 
+function deleteAudioCircleSettings(audioInstanceId) {
+  audioCircleSettingsByInstance.delete(audioInstanceId)
+}
+
+function getAudioInstanceSummaries() {
+  return Array.from(audioCircleSettingsByInstance.entries())
+    .map(([audioInstanceId, state]) => ({
+      audioInstanceId,
+      updatedAt: state.updatedAt,
+    }))
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+}
+
 function isFiniteNumber(value) {
   return typeof value === "number" && Number.isFinite(value)
 }
@@ -213,7 +226,8 @@ function isPointerMessage(message) {
       message.userRole === "controller" ||
       message.userRole === "color" ||
       message.userRole === "audio" ||
-      message.userRole === "stage") &&
+      message.userRole === "stage" ||
+      message.userRole === "songs") &&
     isFiniteNumber(message.x) &&
     isFiniteNumber(message.y) &&
     isFiniteNumber(message.vx) &&
@@ -282,7 +296,8 @@ function isAudioAnalysisFrame(frame) {
     frame.spectrum.every(isNormalized) &&
     (frame.source === undefined ||
       frame.source === "audio-worklet" ||
-      frame.source === "analyser") &&
+      frame.source === "analyser" ||
+      frame.source === "song") &&
     (frame.sequence === undefined || isFiniteNumber(frame.sequence)) &&
     (frame.analysisRateHz === undefined ||
       isFiniteNumber(frame.analysisRateHz)) &&
@@ -333,6 +348,15 @@ function isAudioSettingsUpdateMessage(message) {
   )
 }
 
+function isAudioSettingsDeleteMessage(message) {
+  return (
+    message &&
+    message.type === "audio_settings_delete" &&
+    normalizeAudioInstanceId(message.audioInstanceId) === message.audioInstanceId &&
+    isFiniteNumber(message.timestamp)
+  )
+}
+
 function isColorControlMessage(message) {
   return (
     message &&
@@ -366,6 +390,58 @@ function isClearStageMessage(message) {
     message &&
     message.type === "clear_stage" &&
     typeof message.userId === "string" &&
+    isFiniteNumber(message.timestamp)
+  )
+}
+
+function isSongId(value) {
+  return (
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 80 &&
+    /^[A-Za-z0-9_-]+$/.test(value)
+  )
+}
+
+function isSongCommandMessage(message) {
+  if (!message || message.type !== "song_command") {
+    return false
+  }
+
+  const hasSongId = message.songId !== undefined
+  const hasTimeMs = message.timeMs !== undefined
+
+  return (
+    (message.command === "load" ||
+      message.command === "play" ||
+      message.command === "pause" ||
+      message.command === "seek" ||
+      message.command === "stop") &&
+    (message.command === "load" || message.command === "play" ? hasSongId : true) &&
+    (!hasSongId || isSongId(message.songId)) &&
+    (!hasTimeMs || (isFiniteNumber(message.timeMs) && message.timeMs >= 0)) &&
+    (message.command !== "seek" || hasTimeMs) &&
+    isFiniteNumber(message.timestamp)
+  )
+}
+
+function isSongTransportUpdateMessage(message) {
+  return (
+    message &&
+    message.type === "song_transport_update" &&
+    (message.songId === undefined || isSongId(message.songId)) &&
+    (message.state === "idle" ||
+      message.state === "loading" ||
+      message.state === "ready" ||
+      message.state === "playing" ||
+      message.state === "paused" ||
+      message.state === "ended" ||
+      message.state === "error") &&
+    isFiniteNumber(message.timeMs) &&
+    message.timeMs >= 0 &&
+    isFiniteNumber(message.durationMs) &&
+    message.durationMs >= 0 &&
+    (message.error === undefined || typeof message.error === "string") &&
     isFiniteNumber(message.timestamp)
   )
 }
@@ -425,11 +501,31 @@ app.prepare().then(() => {
     }
   }
 
+  function broadcastToAudioClients(message) {
+    const payload = JSON.stringify(message)
+
+    for (const [client, connectedUser] of clients) {
+      if (client.readyState === 1 && connectedUser.role === "audio") {
+        client.send(payload)
+      }
+    }
+  }
+
   function broadcastToStages(message) {
     const payload = JSON.stringify(message)
 
     for (const [client, connectedUser] of clients) {
       if (client.readyState === 1 && connectedUser.role === "stage") {
+        client.send(payload)
+      }
+    }
+  }
+
+  function broadcastToSongClients(message) {
+    const payload = JSON.stringify(message)
+
+    for (const [client, connectedUser] of clients) {
+      if (client.readyState === 1 && connectedUser.role === "songs") {
         client.send(payload)
       }
     }
@@ -446,6 +542,24 @@ app.prepare().then(() => {
         updatedAt: audioCircleState.updatedAt,
       }),
     )
+  }
+
+  function sendAudioInstancesSnapshot(socket) {
+    socket.send(
+      JSON.stringify({
+        type: "audio_instances_snapshot",
+        instances: getAudioInstanceSummaries(),
+        timestamp: now(),
+      }),
+    )
+  }
+
+  function broadcastAudioInstancesSnapshot() {
+    broadcastToAudioClients({
+      type: "audio_instances_snapshot",
+      instances: getAudioInstanceSummaries(),
+      timestamp: now(),
+    })
   }
 
   wss.on("connection", (socket, request) => {
@@ -482,12 +596,14 @@ app.prepare().then(() => {
 
     if (role === "audio") {
       sendAudioSettingsSnapshot(socket, user.audioInstanceId)
+      sendAudioInstancesSnapshot(socket)
       broadcastToStages({
         type: "audio_settings_snapshot",
         audioInstanceId: user.audioInstanceId,
         settings: getAudioCircleState(user.audioInstanceId).settings,
         updatedAt: getAudioCircleState(user.audioInstanceId).updatedAt,
       })
+      broadcastAudioInstancesSnapshot()
     }
 
     if (role === "stage") {
@@ -527,6 +643,16 @@ app.prepare().then(() => {
         return
       }
 
+      if (role === "songs" && isSongCommandMessage(message)) {
+        broadcastToStages({ ...message, timestamp: now() })
+        return
+      }
+
+      if (role === "stage" && isSongTransportUpdateMessage(message)) {
+        broadcastToSongClients({ ...message, timestamp: now() })
+        return
+      }
+
       if (
         role === "audio" &&
         isAudioSettingsUpdateMessage(message) &&
@@ -551,6 +677,22 @@ app.prepare().then(() => {
           settings: audioCircleState.settings,
           timestamp: audioCircleState.updatedAt,
         })
+        broadcastAudioInstancesSnapshot()
+        return
+      }
+
+      if (role === "audio" && isAudioSettingsDeleteMessage(message)) {
+        deleteAudioCircleSettings(message.audioInstanceId)
+
+        const deleteMessage = {
+          type: "audio_settings_delete",
+          audioInstanceId: message.audioInstanceId,
+          timestamp: now(),
+        }
+
+        broadcastToAudioClients(deleteMessage)
+        broadcastToStages(deleteMessage)
+        broadcastAudioInstancesSnapshot()
         return
       }
 
