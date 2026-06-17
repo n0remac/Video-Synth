@@ -24,6 +24,86 @@ function isNormalized(value: unknown): value is number {
   return isFiniteNumber(value) && value >= 0 && value <= 1
 }
 
+function isShapeFamily(value: unknown) {
+  return (
+    value === "prism" ||
+    value === "pyramid" ||
+    value === "sphere" ||
+    value === "polyhedron"
+  )
+}
+
+function isShapeParameters(value: unknown) {
+  return (
+    isRecord(value) &&
+    isFiniteNumber(value.angleBias) &&
+    isFiniteNumber(value.bevel) &&
+    isFiniteNumber(value.depth) &&
+    isFiniteNumber(value.sideVariation) &&
+    isFiniteNumber(value.sides) &&
+    isFiniteNumber(value.size) &&
+    isFiniteNumber(value.taper) &&
+    isFiniteNumber(value.twist) &&
+    value.angleBias >= -1 &&
+    value.angleBias <= 1 &&
+    value.bevel >= 0 &&
+    value.bevel <= 0.25 &&
+    value.depth >= 0.2 &&
+    value.depth <= 3 &&
+    value.sideVariation >= 0 &&
+    value.sideVariation <= 1 &&
+    value.sides >= 3 &&
+    value.sides <= 24 &&
+    value.size >= 0.7 &&
+    value.size <= 2.6 &&
+    value.taper >= 0.2 &&
+    value.taper <= 1.8 &&
+    value.twist >= -180 &&
+    value.twist <= 180
+  )
+}
+
+function isShapeMotionMapping(value: unknown) {
+  return (
+    isRecord(value) &&
+    typeof value.enabled === "boolean" &&
+    (value.source === "level" || value.source === "rise-fall") &&
+    isFiniteNumber(value.amount) &&
+    typeof value.invert === "boolean" &&
+    value.amount >= 0 &&
+    value.amount <= 360
+  )
+}
+
+function isShapeMotionMappings(value: unknown) {
+  return (
+    isRecord(value) &&
+    isShapeMotionMapping(value.angleBias) &&
+    isShapeMotionMapping(value.bevel) &&
+    isShapeMotionMapping(value.depth) &&
+    isShapeMotionMapping(value.sideVariation) &&
+    isShapeMotionMapping(value.sides) &&
+    isShapeMotionMapping(value.size) &&
+    isShapeMotionMapping(value.taper) &&
+    isShapeMotionMapping(value.twist) &&
+    isShapeMotionMapping(value.rotation)
+  )
+}
+
+function isAudioControlledShapeSettings(value: unknown) {
+  return (
+    isRecord(value) &&
+    typeof value.enabled === "boolean" &&
+    (value.mode === "2d" || value.mode === "3d") &&
+    isShapeFamily(value.family) &&
+    isShapeParameters(value.parameters) &&
+    isFiniteNumber(value.rotation) &&
+    value.rotation >= 0 &&
+    value.rotation <= 360 &&
+    isShapeMotionMappings(value.motionMappings)
+  )
+}
+
 function isAudioCircleSettings(value: unknown) {
   return (
     isRecord(value) &&
@@ -39,7 +119,8 @@ function isAudioCircleSettings(value: unknown) {
     typeof value.circleGrowOnRise === "boolean" &&
     typeof value.circleFadeOnFall === "boolean" &&
     typeof value.circleShrinkOnFall === "boolean" &&
-    typeof value.circleLevelControlsSize === "boolean"
+    typeof value.circleLevelControlsSize === "boolean" &&
+    isAudioControlledShapeSettings(value.centerShape)
   )
 }
 

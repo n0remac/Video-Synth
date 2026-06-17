@@ -1,4 +1,5 @@
 import type { PatchDefinition } from "@/features/stage/patches/patchTypes"
+import type { AudioControlledShapeSettings } from "@/features/shapeGenerator/shapeGeneratorTypes"
 
 export type VisualizerClientRole = "controller" | "color" | "audio" | "stage"
 
@@ -35,6 +36,7 @@ export type AudioCircleSettings = {
   circleFadeOnFall: boolean
   circleShrinkOnFall: boolean
   circleLevelControlsSize: boolean
+  centerShape: AudioControlledShapeSettings
 }
 
 export type AudioRouteSignal = {

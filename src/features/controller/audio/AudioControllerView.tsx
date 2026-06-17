@@ -9,6 +9,17 @@ import type {
 import { ColorPicker } from "../shared/ColorPicker"
 import { ControlSlider } from "../shared/ControlSlider"
 import { ControllerNav } from "../shared/ControllerNav"
+import type {
+  AudioControlledShapeSettings,
+  ShapeControlName,
+  ShapeFamily,
+  ShapeMotionSource,
+} from "@/features/shapeGenerator/shapeGeneratorTypes"
+import {
+  createDefaultAudioControlledShapeSettings,
+  shapeFamilyOptions,
+} from "@/features/shapeGenerator/shapeGeneratorTypes"
+import { getNearestPolyhedronSideCount } from "@/features/shapeGenerator/shapeGeneratorThree"
 import {
   updateAudioLevelMotionState,
   isAboveTriggerLevel,
@@ -68,7 +79,102 @@ const defaultAudioSettings: AudioCircleSettings = {
   circleFadeOnFall: false,
   circleShrinkOnFall: false,
   circleLevelControlsSize: false,
+  centerShape: createDefaultAudioControlledShapeSettings(),
 }
+
+type ShapeControlDefinition = {
+  name: ShapeControlName
+  label: string
+  min: number
+  max: number
+  step: number
+  motionAmountMax: number
+  motionAmountStep: number
+}
+
+const shapeControlDefinitions: ShapeControlDefinition[] = [
+  {
+    name: "sides",
+    label: "Sides",
+    min: 3,
+    max: 24,
+    step: 1,
+    motionAmountMax: 12,
+    motionAmountStep: 1,
+  },
+  {
+    name: "size",
+    label: "Size",
+    min: 0.7,
+    max: 2.6,
+    step: 0.1,
+    motionAmountMax: 1.5,
+    motionAmountStep: 0.05,
+  },
+  {
+    name: "rotation",
+    label: "Rotation",
+    min: 0,
+    max: 360,
+    step: 1,
+    motionAmountMax: 180,
+    motionAmountStep: 1,
+  },
+  {
+    name: "angleBias",
+    label: "Angle Bias",
+    min: -1,
+    max: 1,
+    step: 0.01,
+    motionAmountMax: 1,
+    motionAmountStep: 0.01,
+  },
+  {
+    name: "sideVariation",
+    label: "Side Variation",
+    min: 0,
+    max: 1,
+    step: 0.01,
+    motionAmountMax: 1,
+    motionAmountStep: 0.01,
+  },
+  {
+    name: "depth",
+    label: "Depth",
+    min: 0.2,
+    max: 3,
+    step: 0.1,
+    motionAmountMax: 2,
+    motionAmountStep: 0.05,
+  },
+  {
+    name: "bevel",
+    label: "Bevel",
+    min: 0,
+    max: 0.25,
+    step: 0.01,
+    motionAmountMax: 0.2,
+    motionAmountStep: 0.01,
+  },
+  {
+    name: "twist",
+    label: "Twist",
+    min: -180,
+    max: 180,
+    step: 1,
+    motionAmountMax: 180,
+    motionAmountStep: 1,
+  },
+  {
+    name: "taper",
+    label: "Taper",
+    min: 0.2,
+    max: 1.8,
+    step: 0.05,
+    motionAmountMax: 1,
+    motionAmountStep: 0.05,
+  },
+]
 
 function getSelectedSpectrumRange(
   spectrum: number[],
@@ -553,6 +659,23 @@ function createLevelMotionHistorySample(
   }
 }
 
+function getShapeControlValue(
+  shape: AudioControlledShapeSettings,
+  controlName: ShapeControlName,
+) {
+  return controlName === "rotation"
+    ? shape.rotation
+    : shape.parameters[controlName]
+}
+
+function formatShapeControlValue(value: number, step: number) {
+  if (step >= 1) {
+    return String(Math.round(value))
+  }
+
+  return String(Number(value.toFixed(2)))
+}
+
 type AudioControllerViewProps = {
   audioInstanceId: string
 }
@@ -674,7 +797,13 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
 
   useEffect(() => {
     if (socket.audioSettings) {
-      setSettings(socket.audioSettings)
+      setSettings({
+        ...defaultAudioSettings,
+        ...socket.audioSettings,
+        centerShape:
+          socket.audioSettings.centerShape ??
+          createDefaultAudioControlledShapeSettings(),
+      })
     }
   }, [socket.audioSettings])
 
@@ -724,6 +853,108 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
       return nextSettings
     })
   }
+
+  function updateCenterShape(patch: Partial<AudioControlledShapeSettings>) {
+    updateSettings({
+      centerShape: {
+        ...settings.centerShape,
+        ...patch,
+      },
+    })
+  }
+
+  function updateShapeParameter(
+    controlName: ShapeControlName,
+    value: number,
+  ) {
+    if (controlName === "rotation") {
+      updateCenterShape({ rotation: value })
+      return
+    }
+
+    updateCenterShape({
+      parameters: {
+        ...settings.centerShape.parameters,
+        [controlName]: value,
+      },
+    })
+  }
+
+  function updateShapeMotionMapping(
+    controlName: ShapeControlName,
+    patch: Partial<AudioControlledShapeSettings["motionMappings"][ShapeControlName]>,
+  ) {
+    updateCenterShape({
+      motionMappings: {
+        ...settings.centerShape.motionMappings,
+        [controlName]: {
+          ...settings.centerShape.motionMappings[controlName],
+          ...patch,
+        },
+      },
+    })
+  }
+
+  function getVisibleShapeControls() {
+    const shape = settings.centerShape
+    const isPolygonal3D =
+      shape.mode === "3d" &&
+      (shape.family === "prism" || shape.family === "pyramid")
+    const isSphere = shape.mode === "3d" && shape.family === "sphere"
+    const isPolyhedron = shape.mode === "3d" && shape.family === "polyhedron"
+    const showSides =
+      shape.mode === "2d" || isPolygonal3D || isSphere || isPolyhedron
+    const showAngleBias = shape.mode === "2d" || isPolygonal3D
+    const showSideVariation =
+      shape.mode === "2d" || isPolygonal3D || isSphere
+    const showBevel = shape.mode === "3d" && shape.family === "prism"
+    const showTwistAndTaper =
+      shape.mode === "3d" && shape.family !== "pyramid"
+
+    return shapeControlDefinitions
+      .filter((definition) => {
+        if (definition.name === "sides") {
+          return showSides
+        }
+
+        if (definition.name === "angleBias") {
+          return showAngleBias
+        }
+
+        if (definition.name === "sideVariation") {
+          return showSideVariation
+        }
+
+        if (definition.name === "depth") {
+          return shape.mode === "3d"
+        }
+
+        if (definition.name === "bevel") {
+          return showBevel
+        }
+
+        if (definition.name === "twist" || definition.name === "taper") {
+          return showTwistAndTaper
+        }
+
+        return true
+      })
+      .map((definition) => {
+        if (definition.name !== "sides" || !isPolyhedron) {
+          return definition
+        }
+
+        return {
+          ...definition,
+          label: "Sides",
+          min: 4,
+          max: 20,
+        }
+      })
+  }
+
+  const centerShape = settings.centerShape
+  const visibleShapeControls = getVisibleShapeControls()
 
   return (
     <main className="controller-shell audio-controller-shell">
@@ -924,6 +1155,181 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
           />
           <span>Level sets size</span>
         </label>
+      </section>
+
+      <section className="audio-shape-panel" aria-label="Center shape controls">
+        <header className="audio-shape-header">
+          <div>
+            <p className="eyebrow">Center Shape</p>
+            <h2>Stage Shape</h2>
+          </div>
+          <label className="audio-checkbox-field">
+            <input
+              type="checkbox"
+              checked={centerShape.enabled}
+              onChange={(event) =>
+                updateCenterShape({ enabled: event.currentTarget.checked })
+              }
+            />
+            <span>Show on stage</span>
+          </label>
+        </header>
+
+        <div className="audio-shape-base-controls">
+          <div
+            className="mode-toggle"
+            role="group"
+            aria-label="Center shape dimension"
+          >
+            <button
+              type="button"
+              data-active={centerShape.mode === "2d"}
+              aria-pressed={centerShape.mode === "2d"}
+              onClick={() => updateCenterShape({ mode: "2d" })}
+            >
+              2D
+            </button>
+            <button
+              type="button"
+              data-active={centerShape.mode === "3d"}
+              aria-pressed={centerShape.mode === "3d"}
+              onClick={() => updateCenterShape({ mode: "3d" })}
+            >
+              3D
+            </button>
+          </div>
+
+          {centerShape.mode === "3d" ? (
+            <label className="control-field">
+              <span>Form</span>
+              <select
+                value={centerShape.family}
+                onChange={(event) =>
+                  updateCenterShape({
+                    family: event.target.value as ShapeFamily,
+                  })
+                }
+              >
+                {shapeFamilyOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
+
+        <div className="audio-shape-control-grid">
+          {visibleShapeControls.map((definition) => {
+            const mapping = centerShape.motionMappings[definition.name]
+            const rawValue = getShapeControlValue(centerShape, definition.name)
+            const isPolyhedronSides =
+              definition.name === "sides" &&
+              centerShape.mode === "3d" &&
+              centerShape.family === "polyhedron"
+            const value = isPolyhedronSides
+              ? getNearestPolyhedronSideCount(rawValue)
+              : rawValue
+
+            return (
+              <div className="audio-shape-control" key={definition.name}>
+                <label className="control-field">
+                  <span>
+                    {isPolyhedronSides ? "Polyhedron" : definition.label}
+                    <strong>
+                      {formatShapeControlValue(value, definition.step)}
+                    </strong>
+                  </span>
+                  <input
+                    type="range"
+                    min={definition.min}
+                    max={definition.max}
+                    step={definition.step}
+                    value={value}
+                    onChange={(event) => {
+                      const nextValue = Number(event.target.value)
+
+                      updateShapeParameter(
+                        definition.name,
+                        isPolyhedronSides
+                          ? getNearestPolyhedronSideCount(nextValue)
+                          : nextValue,
+                      )
+                    }}
+                  />
+                </label>
+
+                <label className="audio-shape-motion-toggle">
+                  <input
+                    type="checkbox"
+                    checked={mapping.enabled}
+                    onChange={(event) =>
+                      updateShapeMotionMapping(definition.name, {
+                        enabled: event.currentTarget.checked,
+                      })
+                    }
+                  />
+                  <span>Use Level Motion</span>
+                </label>
+
+                {mapping.enabled ? (
+                  <div className="audio-shape-motion-controls">
+                    <label className="control-field">
+                      <span>Source</span>
+                      <select
+                        value={mapping.source}
+                        onChange={(event) =>
+                          updateShapeMotionMapping(definition.name, {
+                            source: event.target.value as ShapeMotionSource,
+                          })
+                        }
+                      >
+                        <option value="rise-fall">Rise/Fall</option>
+                        <option value="level">Level</option>
+                      </select>
+                    </label>
+                    <label className="control-field">
+                      <span>
+                        Amount
+                        <strong>
+                          {formatShapeControlValue(
+                            mapping.amount,
+                            definition.motionAmountStep,
+                          )}
+                        </strong>
+                      </span>
+                      <input
+                        type="range"
+                        min={0}
+                        max={definition.motionAmountMax}
+                        step={definition.motionAmountStep}
+                        value={mapping.amount}
+                        onChange={(event) =>
+                          updateShapeMotionMapping(definition.name, {
+                            amount: Number(event.target.value),
+                          })
+                        }
+                      />
+                    </label>
+                    <label className="audio-shape-motion-toggle">
+                      <input
+                        type="checkbox"
+                        checked={mapping.invert}
+                        onChange={(event) =>
+                          updateShapeMotionMapping(definition.name, {
+                            invert: event.currentTarget.checked,
+                          })
+                        }
+                      />
+                      <span>Invert</span>
+                    </label>
+                  </div>
+                ) : null}
+              </div>
+            )
+          })}
+        </div>
       </section>
 
       {!stageAudioFrame ? (

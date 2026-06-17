@@ -19,6 +19,43 @@ const validAudioSettings = {
   circleFadeOnFall: false,
   circleShrinkOnFall: false,
   circleLevelControlsSize: false,
+  centerShape: {
+    enabled: false,
+    mode: "2d",
+    family: "prism",
+    parameters: {
+      angleBias: 0,
+      bevel: 0.04,
+      depth: 1.1,
+      sideVariation: 0,
+      sides: 6,
+      size: 1.7,
+      taper: 1,
+      twist: 0,
+    },
+    rotation: 0,
+    motionMappings: {
+      angleBias: { enabled: false, source: "rise-fall", amount: 0, invert: false },
+      bevel: { enabled: false, source: "rise-fall", amount: 0, invert: false },
+      depth: { enabled: false, source: "rise-fall", amount: 0, invert: false },
+      sideVariation: {
+        enabled: false,
+        source: "rise-fall",
+        amount: 0,
+        invert: false,
+      },
+      sides: { enabled: false, source: "rise-fall", amount: 0, invert: false },
+      size: { enabled: false, source: "rise-fall", amount: 0, invert: false },
+      taper: { enabled: false, source: "rise-fall", amount: 0, invert: false },
+      twist: { enabled: false, source: "rise-fall", amount: 0, invert: false },
+      rotation: {
+        enabled: false,
+        source: "rise-fall",
+        amount: 0,
+        invert: false,
+      },
+    },
+  },
 }
 
 test("creates audio settings updates with an audio instance id", () => {

@@ -522,6 +522,89 @@ canvas {
   flex: 0 0 auto;
 }
 
+.audio-shape-panel {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.audio-shape-header,
+.audio-shape-base-controls {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(160px, 0.5fr);
+  gap: 12px;
+  align-items: end;
+}
+
+.audio-shape-header h2 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1rem;
+  letter-spacing: 0;
+}
+
+.audio-shape-control-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.audio-shape-control {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.audio-shape-motion-toggle {
+  min-height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.audio-shape-motion-toggle:has(input:checked) {
+  border-color: rgba(255, 225, 86, 0.68);
+  color: #ffffff;
+  background: rgba(255, 225, 86, 0.12);
+}
+
+.audio-shape-motion-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: #ffe156;
+  flex: 0 0 auto;
+}
+
+.audio-shape-motion-controls {
+  display: grid;
+  gap: 8px;
+}
+
+.audio-shape-motion-controls .control-field {
+  font-size: 0.72rem;
+}
+
+.audio-shape-motion-controls .control-field input[type="range"],
+.audio-shape-motion-controls .control-field select {
+  height: 36px;
+}
+
 .audio-motion-panel {
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 8px;
@@ -880,6 +963,15 @@ canvas {
 
   .audio-pulse-panel header {
     grid-column: span 2;
+  }
+
+  .audio-shape-header,
+  .audio-shape-base-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .audio-shape-control-grid {
+    grid-template-columns: 1fr;
   }
 
   .audio-motion-panel {

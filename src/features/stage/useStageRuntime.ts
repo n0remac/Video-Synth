@@ -18,6 +18,7 @@ import { startAnimationLoop } from "./render/animationLoop"
 import { createRenderer } from "./render/createRenderer"
 import { createScene } from "./render/createScene"
 import { ColorControlModule } from "./modules/colorControl"
+import { CenterShapeModule } from "./modules/centerShape"
 import { RipplePaintModule } from "./modules/ripplePaint"
 import { TrailPaintModule } from "./modules/trailPaint"
 
@@ -149,6 +150,7 @@ export function useStageRuntime() {
     scene.background = new THREE.Color(stageConfig.backgroundColor)
     const camera = createCamera(stageConfig.worldWidth, stageConfig.worldHeight)
     const colorControl = new ColorControlModule()
+    const centerShape = new CenterShapeModule({ scene })
     const ripplePaint = new RipplePaintModule({
       scene,
       maxRipples: stageConfig.maxRipples,
@@ -159,6 +161,7 @@ export function useStageRuntime() {
 
     audioFrameHandlerRef.current = (frame) => {
       frame.routes?.forEach((routeSignal: AudioRouteSignal) => {
+        centerShape.receiveAudioRouteSignal(routeSignal)
         ripplePaint.receiveAudioRouteSignal(routeSignal)
       })
     }
@@ -272,6 +275,7 @@ export function useStageRuntime() {
             index === existingIndex ? nextRoute : route,
           )
         })
+        centerShape.receiveAudioSettings(message.audioInstanceId, message.settings)
       }
     })
 
@@ -332,6 +336,7 @@ export function useStageRuntime() {
     const loop = startAnimationLoop((dt) => {
       ripplePaint.update(dt)
       trailPaint.update(dt)
+      centerShape.update(dt)
       colorControl.update()
       scene.background = new THREE.Color(
         colorControl.resolveBackgroundColor(stageConfig.backgroundColor),
@@ -351,6 +356,7 @@ export function useStageRuntime() {
       activeCanvas.removeEventListener("pointerup", handlePointerUp)
       activeCanvas.removeEventListener("pointercancel", handlePointerUp)
       colorControl.dispose()
+      centerShape.dispose()
       ripplePaint.dispose()
       trailPaint.dispose()
       renderer.dispose()

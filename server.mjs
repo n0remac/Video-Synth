@@ -23,6 +23,54 @@ const userColors = [
 
 const clientRoles = new Set(["controller", "color", "audio", "stage"])
 
+const shapeParameterNames = [
+  "angleBias",
+  "bevel",
+  "depth",
+  "sideVariation",
+  "sides",
+  "size",
+  "taper",
+  "twist",
+]
+const shapeControlNames = [...shapeParameterNames, "rotation"]
+
+const defaultShapeMotionMapping = {
+  enabled: false,
+  source: "rise-fall",
+  amount: 0,
+  invert: false,
+}
+
+function createDefaultShapeMotionMappings() {
+  return Object.fromEntries(
+    shapeControlNames.map((parameterName) => [
+      parameterName,
+      { ...defaultShapeMotionMapping },
+    ]),
+  )
+}
+
+function createDefaultCenterShapeSettings() {
+  return {
+    enabled: false,
+    mode: "2d",
+    family: "prism",
+    parameters: {
+      angleBias: 0,
+      bevel: 0.04,
+      depth: 1.1,
+      sideVariation: 0,
+      sides: 6,
+      size: 1.7,
+      taper: 1,
+      twist: 0,
+    },
+    rotation: 0,
+    motionMappings: createDefaultShapeMotionMappings(),
+  }
+}
+
 const defaultAudioCircleSettings = {
   sampleStartPercent: 0,
   sampleEndPercent: 20,
@@ -37,6 +85,7 @@ const defaultAudioCircleSettings = {
   circleFadeOnFall: false,
   circleShrinkOnFall: false,
   circleLevelControlsSize: false,
+  centerShape: createDefaultCenterShapeSettings(),
 }
 
 const audioCircleSettingsByInstance = new Map()
@@ -79,6 +128,80 @@ function setAudioCircleSettings(audioInstanceId, settings) {
 
 function isFiniteNumber(value) {
   return typeof value === "number" && Number.isFinite(value)
+}
+
+function isShapeFamily(value) {
+  return (
+    value === "prism" ||
+    value === "pyramid" ||
+    value === "sphere" ||
+    value === "polyhedron"
+  )
+}
+
+function isShapeParameters(value) {
+  return (
+    value &&
+    isFiniteNumber(value.angleBias) &&
+    isFiniteNumber(value.bevel) &&
+    isFiniteNumber(value.depth) &&
+    isFiniteNumber(value.sideVariation) &&
+    isFiniteNumber(value.sides) &&
+    isFiniteNumber(value.size) &&
+    isFiniteNumber(value.taper) &&
+    isFiniteNumber(value.twist) &&
+    value.angleBias >= -1 &&
+    value.angleBias <= 1 &&
+    value.bevel >= 0 &&
+    value.bevel <= 0.25 &&
+    value.depth >= 0.2 &&
+    value.depth <= 3 &&
+    value.sideVariation >= 0 &&
+    value.sideVariation <= 1 &&
+    value.sides >= 3 &&
+    value.sides <= 24 &&
+    value.size >= 0.7 &&
+    value.size <= 2.6 &&
+    value.taper >= 0.2 &&
+    value.taper <= 1.8 &&
+    value.twist >= -180 &&
+    value.twist <= 180
+  )
+}
+
+function isShapeMotionMapping(value) {
+  return (
+    value &&
+    typeof value.enabled === "boolean" &&
+    (value.source === "level" || value.source === "rise-fall") &&
+    isFiniteNumber(value.amount) &&
+    typeof value.invert === "boolean" &&
+    value.amount >= 0 &&
+    value.amount <= 360
+  )
+}
+
+function isShapeMotionMappings(value) {
+  return (
+    value &&
+    shapeControlNames.every((parameterName) =>
+      isShapeMotionMapping(value[parameterName]),
+    )
+  )
+}
+
+function isAudioControlledShapeSettings(value) {
+  return (
+    value &&
+    typeof value.enabled === "boolean" &&
+    (value.mode === "2d" || value.mode === "3d") &&
+    isShapeFamily(value.family) &&
+    isShapeParameters(value.parameters) &&
+    isFiniteNumber(value.rotation) &&
+    value.rotation >= 0 &&
+    value.rotation <= 360 &&
+    isShapeMotionMappings(value.motionMappings)
+  )
 }
 
 function isPointerMessage(message) {
@@ -125,6 +248,7 @@ function isAudioCircleSettings(settings) {
     typeof settings.circleFadeOnFall === "boolean" &&
     typeof settings.circleShrinkOnFall === "boolean" &&
     typeof settings.circleLevelControlsSize === "boolean" &&
+    isAudioControlledShapeSettings(settings.centerShape) &&
     settings.sampleStartPercent >= 0 &&
     settings.sampleStartPercent <= 100 &&
     settings.sampleEndPercent >= 0 &&
