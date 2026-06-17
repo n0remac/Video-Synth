@@ -34,6 +34,10 @@ import type {
   AdaptiveTriggerState,
   AudioLevelMotionState,
 } from "./audioRoutingLogic"
+import {
+  VisualCvPreviewPanel,
+  type VisualCvPreviewPanelHandle,
+} from "./VisualCvPreviewPanel"
 import { useVisualizerSocket } from "../shared/useVisualizerSocket"
 
 function clamp(value: number, min: number, max: number) {
@@ -703,6 +707,7 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
   const adaptiveTriggerRef = useRef<AdaptiveTriggerState | null>(null)
   const levelMotionStateRef = useRef<AudioLevelMotionState | null>(null)
   const levelMotionHistoryRef = useRef<AudioLevelMotionHistorySample[]>([])
+  const visualCvPreviewRef = useRef<VisualCvPreviewPanelHandle | null>(null)
   const lastControllerStateUpdateAtRef = useRef(0)
   const [settings, setSettings] =
     useState<AudioCircleSettings>(defaultAudioSettings)
@@ -773,6 +778,14 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
           )
 
       levelMotionStateRef.current = nextLevelMotionState
+      visualCvPreviewRef.current?.receiveInput({
+        timestamp: nextLevelMotionState.timestamp,
+        level: nextLevelMotionState.level,
+        riseAmount: nextLevelMotionState.riseAmount,
+        fallAmount: nextLevelMotionState.fallAmount,
+        riseRate: nextLevelMotionState.riseRate,
+        fallRate: nextLevelMotionState.fallRate,
+      })
 
       const earliestTimestamp = timestamp - levelMotionHistoryDurationMs
       const nextHistory = [
@@ -1560,6 +1573,16 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
           </div>
         </div>
       </section>
+
+      <VisualCvPreviewPanel
+        ref={visualCvPreviewRef}
+        resetKey={[
+          audioInstanceId,
+          settings.gain,
+          settings.sampleStartPercent,
+          settings.sampleEndPercent,
+        ].join(":")}
+      />
     </main>
   )
 }

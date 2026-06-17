@@ -11,7 +11,7 @@ the UI and docs as Signal Paint.
 ## Runtime Shape
 
 ```txt
-controllers / audio controllers / color controller
+controllers / audio controllers / color controller / songs page
   -> WebSocket messages at /ws
   -> Node relay in server.mjs
   -> stage browser at /stage
@@ -19,7 +19,9 @@ controllers / audio controllers / color controller
 ```
 
 The stage owns the final render. Controllers do not render the shared visuals;
-they send normalized input and settings over WebSocket.
+they send normalized input, settings, and transport commands over WebSocket.
+Uploaded songs are saved locally, scanned in the browser, and played by the stage
+so visuals and audio share the stage tab's playback clock.
 
 ## Commands
 
@@ -52,8 +54,13 @@ they send normalized input and settings over WebSocket.
 | `/controller` | `DrawControllerView` | Touch/pointer drawing controller for circles or line trails. |
 | `/color-controller` | `ColorControllerView` | Color mapping controller for all users, the background, or a selected user. |
 | `/audio-controller` | redirect page | Creates a random audio instance id and redirects to `/audio-controller/[instanceId]`. |
-| `/audio-controller/[instanceId]` | `AudioControllerView` | Per-instance audio routing/settings controller. |
+| `/audio-controller/[instanceId]` | `AudioControllerView` | Per-instance audio routing/settings controller with a selector for remembered audio instances. |
+| `/songs` | `SongsView` | Song library, upload/scanning workflow, and stage playback controls. |
 | `/shape-generator` | `ShapeGeneratorView` | Standalone 2D/3D shape generation tool. |
+| `/api/songs` | route handlers | Lists and uploads local song files. |
+| `/api/songs/[songId]` | route handlers | Deletes a saved song. |
+| `/api/songs/[songId]/audio` | route handlers | Streams saved song audio with byte-range support for seeking. |
+| `/api/songs/[songId]/analysis` | route handlers | Reads and writes precomputed song analysis JSON. |
 | `/ws` | `server.mjs` | WebSocket endpoint for stages and controllers. |
 
 ## Server Modules
@@ -65,14 +72,18 @@ HTTP server, and attaches a `ws` WebSocket server at `/ws`.
 
 Responsibilities:
 
-- Assign client roles: `controller`, `color`, `audio`, or `stage`.
+- Assign client roles: `controller`, `color`, `audio`, `stage`, or `songs`.
 - Assign user ids and rotating user colors.
 - Maintain connected-client state in memory.
-- Validate incoming pointer, color, audio settings, audio frame, and clear-stage
-  messages before rebroadcasting.
+- Validate incoming pointer, color, audio settings, song transport, audio frame,
+  and clear-stage messages before rebroadcasting.
 - Track audio circle settings by audio instance id.
+- Broadcast remembered audio instance lists to audio controllers and delete audio
+  instance settings on request.
 - Broadcast stage audio frames to controllers and route audio settings updates to
   matching audio controllers plus all stages.
+- Route song load/play/pause/seek/stop commands from the songs page to stages and
+  song transport updates from stages back to songs pages.
 
 ### `src/server/audioInstanceIds.mjs`
 
@@ -107,6 +118,8 @@ Defines the WebSocket message contract shared by the app:
 - Color-control messages.
 - Stage audio frames.
 - Audio settings snapshots and updates.
+- Audio instance snapshots and delete messages.
+- Song transport commands and updates.
 - User join/leave/snapshot messages.
 - Clear-stage and patch-changed messages.
 
@@ -129,9 +142,10 @@ modules in an animation loop.
 
 ### `src/features/stage/StageView.tsx`
 
-React view for `/stage`. It renders the fullscreen canvas, connection status, and
-the stage audio start/stop button. It wires `useStageRuntime()` to
-`useAudioAnalyser()`.
+React view for `/stage`. It renders the fullscreen canvas, connection status, the
+stage microphone start/stop button, and compact song transport status. It wires
+`useStageRuntime()` to `useAudioAnalyser()` and stops song playback before
+starting microphone analysis.
 
 ### `src/features/stage/useStageRuntime.ts`
 
@@ -150,6 +164,12 @@ Responsibilities:
 - Track audio route settings from audio controllers.
 - Send stage audio analysis frames back over WebSocket.
 - Convert audio trigger events into random-position ripple inputs.
+- Load analyzed songs, own `HTMLAudioElement` playback, use
+  `audio.currentTime` as the song clock, and emit normal audio frames with
+  `source: "song"`.
+- Apply audio routes to song `controlSpectrum` frames and clear route state when
+  songs are loaded, stopped, seeked, or when an audio controller is deleted.
+- Broadcast song transport state to songs pages.
 
 ### `src/features/stage/stageTypes.ts`
 
@@ -247,7 +267,8 @@ Reusable controller pieces:
 
 - `useVisualizerSocket.ts`: client WebSocket hook for controller, color, and audio
   roles. It tracks connection status, assigned user id/color, visible users,
-  audio settings, and stage audio frames, and exposes typed send helpers.
+  audio settings, remembered audio instances, stage audio frames, and song
+  transport updates, and exposes typed send helpers.
 - `ControllerNav.tsx`: controller navigation links.
 - `TouchPad.tsx`: reusable pointer surface.
 - `ControlSlider.tsx`: labeled slider control.
@@ -284,13 +305,16 @@ pad is held so color overrides stay active on the stage.
 Path: `src/features/controller/audio/`
 
 The audio controller configures how the stage audio analysis should trigger
-visual events for a specific audio instance id.
+visual events for a specific audio instance id. Audio instance settings are held
+in server memory so closed controller tabs can be restored from the instance
+selector while the server is running.
 
 Files:
 
-- `AudioControllerView.tsx`: UI for spectrum display, signal meters, trigger
-  mode, trigger level, adaptive sensitivity/speed, gain, cooldown, frequency
-  range, and circle color. It also renders canvas visualizations for the selected
+- `AudioControllerView.tsx`: UI for selecting remembered audio instances,
+  deleting audio instances, spectrum display, signal meters, trigger mode,
+  trigger level, adaptive sensitivity/speed, gain, cooldown, frequency range,
+  and circle color. It also renders canvas visualizations for the selected
   spectrum range and level motion.
 - `audioRoutingLogic.ts`: pure logic for sampling a spectrum range, applying
   gain/threshold/inversion, smoothing values, adaptive trigger tracking, level
@@ -317,6 +341,46 @@ Files:
 The worklet in `public/worklets/audio-features-processor.js` performs FFT
 analysis at 60 Hz, smooths spectrum buckets, evaluates per-audio-instance routes,
 and posts both analysis frames and trigger events back to `useAudioAnalyser()`.
+
+## Songs Module
+
+Path: `src/features/songs/`
+
+The songs feature lets users upload local audio files, scan full-song spectrum
+analysis, and remotely control stage-owned song playback. The songs page is a
+library/control surface; it does not drive visual timing directly.
+
+Runtime flow:
+
+```txt
+/songs upload
+  -> /api/songs saves file under data/songs/{songId}
+  -> browser decodes audio and scans FFT frames in a Web Worker
+  -> /api/songs/[songId]/analysis stores analysis.json
+  -> /songs sends song_command over WebSocket
+  -> /stage loads audio + analysis and emits AudioAnalysisFrame source "song"
+```
+
+Files:
+
+- `SongsView.tsx`: orchestration for loading songs, uploading, scanning, and
+  sending song transport commands.
+- `SongLibraryPanel.tsx`: reusable upload/list/selection panel.
+- `SelectedSongPlayer.tsx`: reusable selected-song detail, scan, transport, and
+  seek panel.
+- `songStorage.ts`: Node route-handler storage adapter for `data/songs`.
+- `songAnalysisLogic.ts`: shared FFT scanning, analysis-frame creation, and
+  lookahead helpers such as frame-at-time, windowed frames, peak-ahead, and
+  average-spectrum-ahead.
+- `songAnalysisWorker.ts`: browser worker that runs the FFT scan off the main UI
+  thread.
+- `songValidation.ts`, `songTypes.ts`, and `songFormatters.ts`: schema checks,
+  shared contracts, and display helpers.
+
+Song analysis JSON is versioned and includes display `spectrum` plus less-smoothed
+`controlSpectrum` for routing and future lookahead-aware visuals. The v1 scanner
+supports normal browser-decodable audio files and enforces the current upload and
+duration limits in code.
 
 ## Shape Generator Module
 
@@ -350,9 +414,10 @@ Small pure helpers used across feature modules:
 ## Styling
 
 `src/app/globals.css` contains global styles for the home page, stage overlays,
-shape generator, controller screens, touch pads, sliders, audio panels, and
-responsive layout behavior. The app uses a dark high-contrast visual style with
-bright accent colors that match the assigned user palette.
+shape generator, controller screens, song library/player panels, touch pads,
+sliders, audio panels, and responsive layout behavior. The app uses a dark
+high-contrast visual style with bright accent colors that match the assigned user
+palette.
 
 ## Tests
 
@@ -363,6 +428,7 @@ Current tested areas include:
 - Network protocol construction and message validation.
 - Audio analyser logic.
 - Audio routing logic.
+- Song analysis and validation logic.
 - Server audio instance id normalization.
 - Stage ripple, trail, and color-control logic.
 
@@ -379,7 +445,11 @@ WebSocket flows are not covered by automated integration tests yet.
   obvious future extraction path.
 - The patch system is typed but not interactive. `defaultPatch.ts` documents the
   intended signal-to-parameter model for the current ripple effect.
-- Audio controller settings are held in memory by audio instance id. They are not
-  persisted across server restarts.
+- Audio controller settings are held in memory by audio instance id. They can be
+  restored from the audio-controller selector while the server is running, but
+  they are not persisted across server restarts.
+- Songs are stored locally under `data/songs/`, which is intentionally ignored by
+  git. Song analysis is stored as debuggable JSON rather than a compact binary
+  format.
 - The app is designed for trusted local-network use rather than authenticated
   public deployment.
