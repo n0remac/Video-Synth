@@ -71,7 +71,12 @@ function isShapeMotionMapping(value: unknown) {
   return (
     isRecord(value) &&
     typeof value.enabled === "boolean" &&
-    (value.source === "level" || value.source === "rise-fall") &&
+    (value.source === "level" ||
+      value.source === "rise-fall" ||
+      value.source === "motion" ||
+      value.source === "smooth" ||
+      value.source === "envelope" ||
+      value.source === "syncSine") &&
     isFiniteNumber(value.amount) &&
     typeof value.invert === "boolean" &&
     value.amount >= 0 &&
@@ -108,6 +113,103 @@ function isAudioControlledShapeSettings(value: unknown) {
   )
 }
 
+function isVisualCvInputSignal(value: unknown) {
+  return (
+    value === "level" ||
+    value === "rise" ||
+    value === "fall" ||
+    value === "motion"
+  )
+}
+
+function isVisualCvModulationSource(value: unknown) {
+  return (
+    isVisualCvInputSignal(value) ||
+    value === "smooth" ||
+    value === "envelope" ||
+    value === "syncSine"
+  )
+}
+
+function isVisualCvTriggerSource(value: unknown) {
+  return value === "range" || value === "envelope" || value === "syncSine"
+}
+
+function isVisualCvSmoothConfig(value: unknown) {
+  return (
+    isRecord(value) &&
+    isVisualCvInputSignal(value.input) &&
+    isFiniteNumber(value.riseMs) &&
+    isFiniteNumber(value.fallMs) &&
+    value.riseMs >= 0 &&
+    value.riseMs <= 1500 &&
+    value.fallMs >= 0 &&
+    value.fallMs <= 1500
+  )
+}
+
+function isVisualCvEnvelopeConfig(value: unknown) {
+  return (
+    isRecord(value) &&
+    isNormalized(value.threshold) &&
+    isFiniteNumber(value.attackMs) &&
+    isFiniteNumber(value.decayMs) &&
+    isFiniteNumber(value.cooldownMs) &&
+    value.attackMs >= 0 &&
+    value.attackMs <= 1500 &&
+    value.decayMs >= 0 &&
+    value.decayMs <= 3000 &&
+    value.cooldownMs >= 0 &&
+    value.cooldownMs <= 1200
+  )
+}
+
+function isVisualCvSyncSineConfig(value: unknown) {
+  return (
+    isRecord(value) &&
+    isVisualCvInputSignal(value.input) &&
+    isNormalized(value.threshold) &&
+    isNormalized(value.hysteresis) &&
+    isFiniteNumber(value.cooldownMs) &&
+    isFiniteNumber(value.lengthMultiple) &&
+    (value.phaseMode === "peakOnSpike" ||
+      value.phaseMode === "zeroRisingOnSpike" ||
+      value.phaseMode === "troughOnSpike" ||
+      value.phaseMode === "zeroFallingOnSpike") &&
+    (value.syncMode === "soft" || value.syncMode === "hard") &&
+    isFiniteNumber(value.historyMs) &&
+    isFiniteNumber(value.periodSmoothMs) &&
+    isNormalized(value.phaseCorrectionAmount) &&
+    value.cooldownMs >= 0 &&
+    value.cooldownMs <= 1200 &&
+    value.lengthMultiple >= 0.25 &&
+    value.lengthMultiple <= 8 &&
+    value.historyMs >= 500 &&
+    value.historyMs <= 12000 &&
+    value.periodSmoothMs >= 0 &&
+    value.periodSmoothMs <= 3000
+  )
+}
+
+function isVisualCvSettings(value: unknown) {
+  return (
+    isRecord(value) &&
+    isVisualCvSmoothConfig(value.smooth) &&
+    isVisualCvEnvelopeConfig(value.envelope) &&
+    isVisualCvSyncSineConfig(value.syncSine)
+  )
+}
+
+function isTriggeredCircleVisualCvRouting(value: unknown) {
+  return (
+    isRecord(value) &&
+    isVisualCvTriggerSource(value.triggerSource) &&
+    isVisualCvModulationSource(value.sizeSource) &&
+    isVisualCvModulationSource(value.growSource) &&
+    isVisualCvModulationSource(value.releaseSource)
+  )
+}
+
 function isAudioCircleSettings(value: unknown) {
   return (
     isRecord(value) &&
@@ -124,6 +226,8 @@ function isAudioCircleSettings(value: unknown) {
     typeof value.circleFadeOnFall === "boolean" &&
     typeof value.circleShrinkOnFall === "boolean" &&
     typeof value.circleLevelControlsSize === "boolean" &&
+    isTriggeredCircleVisualCvRouting(value.triggeredCircles) &&
+    isVisualCvSettings(value.visualCv) &&
     isAudioControlledShapeSettings(value.centerShape)
   )
 }

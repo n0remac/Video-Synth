@@ -9,7 +9,6 @@ export function StageView() {
     audioRoutes,
     canvasRef,
     connectionStatus,
-    handleAudioTrigger,
     sendAudioFrame,
     songTransport,
     stopSong,
@@ -17,7 +16,6 @@ export function StageView() {
   const audio = useAudioAnalyser({
     routes: audioRoutes,
     onFrame: sendAudioFrame,
-    onTrigger: handleAudioTrigger,
   })
 
   useEffect(() => {

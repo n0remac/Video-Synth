@@ -731,6 +731,20 @@ canvas {
   letter-spacing: 0;
 }
 
+.audio-cv-routing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.audio-cv-routing-grid .control-field {
+  font-size: 0.72rem;
+}
+
+.audio-cv-routing-grid .control-field select {
+  height: 36px;
+}
+
 .audio-checkbox-field {
   min-height: 48px;
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -1102,7 +1116,7 @@ canvas {
 
 .visual-cv-module-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: 12px;
 }
 
@@ -1151,6 +1165,14 @@ canvas {
   background: rgba(247, 247, 255, 0.72);
 }
 
+.visual-cv-phase[data-phase="soft"] {
+  background: #3cff9e;
+}
+
+.visual-cv-phase[data-phase="hard"] {
+  background: #b967ff;
+}
+
 .visual-cv-controls {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
@@ -1173,6 +1195,35 @@ canvas {
   height: 168px;
   border-radius: 6px;
   background: #0d0d11;
+}
+
+.visual-cv-readout-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.visual-cv-readout-grid div {
+  min-height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  display: grid;
+  align-content: center;
+  gap: 3px;
+  padding: 7px 9px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.visual-cv-readout-grid span {
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.68rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.visual-cv-readout-grid strong {
+  color: #ffffff;
+  font-size: 0.82rem;
 }
 
 .visual-cv-meter-grid {

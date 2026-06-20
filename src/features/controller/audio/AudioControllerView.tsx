@@ -38,6 +38,16 @@ import {
   VisualCvPreviewPanel,
   type VisualCvPreviewPanelHandle,
 } from "./VisualCvPreviewPanel"
+import {
+  defaultTriggeredCircleRouting,
+  defaultVisualCvSettings,
+} from "@/features/visualCv/visualCvDefaults"
+import type {
+  TriggeredCircleVisualCvRouting,
+  VisualCvModulationSource,
+  VisualCvSettings,
+  VisualCvTriggerSource,
+} from "@/features/visualCv/visualCvTypes"
 import { useVisualizerSocket } from "../shared/useVisualizerSocket"
 
 function clamp(value: number, min: number, max: number) {
@@ -87,6 +97,8 @@ const defaultAudioSettings: AudioCircleSettings = {
   circleFadeOnFall: false,
   circleShrinkOnFall: false,
   circleLevelControlsSize: false,
+  triggeredCircles: defaultTriggeredCircleRouting,
+  visualCv: defaultVisualCvSettings,
   centerShape: createDefaultAudioControlledShapeSettings(),
 }
 
@@ -182,6 +194,40 @@ const shapeControlDefinitions: ShapeControlDefinition[] = [
     motionAmountMax: 1,
     motionAmountStep: 0.05,
   },
+]
+
+const triggeredCircleTriggerSourceOptions: Array<{
+  value: VisualCvTriggerSource
+  label: string
+}> = [
+  { value: "range", label: "Range Trigger" },
+  { value: "envelope", label: "Envelope Trigger" },
+  { value: "syncSine", label: "Sync Trigger" },
+]
+
+const visualCvModulationSourceOptions: Array<{
+  value: VisualCvModulationSource
+  label: string
+}> = [
+  { value: "level", label: "Level" },
+  { value: "rise", label: "Rise" },
+  { value: "fall", label: "Fall" },
+  { value: "motion", label: "Motion" },
+  { value: "smooth", label: "Smooth" },
+  { value: "envelope", label: "Envelope" },
+  { value: "syncSine", label: "Sync Sine" },
+]
+
+const shapeMotionSourceOptions: Array<{
+  value: ShapeMotionSource
+  label: string
+}> = [
+  { value: "level", label: "Level" },
+  { value: "rise-fall", label: "Rise/Fall" },
+  { value: "motion", label: "Motion" },
+  { value: "smooth", label: "Smooth" },
+  { value: "envelope", label: "Envelope" },
+  { value: "syncSine", label: "Sync Sine" },
 ]
 
 function getSelectedSpectrumRange(
@@ -836,6 +882,10 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
       setSettings({
         ...defaultAudioSettings,
         ...socket.audioSettings,
+        triggeredCircles:
+          socket.audioSettings.triggeredCircles ??
+          defaultAudioSettings.triggeredCircles,
+        visualCv: socket.audioSettings.visualCv ?? defaultAudioSettings.visualCv,
         centerShape:
           socket.audioSettings.centerShape ??
           createDefaultAudioControlledShapeSettings(),
@@ -919,6 +969,21 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
       )
 
       return nextSettings
+    })
+  }
+
+  function updateVisualCv(visualCv: VisualCvSettings) {
+    updateSettings({ visualCv })
+  }
+
+  function updateTriggeredCircles(
+    patch: Partial<TriggeredCircleVisualCvRouting>,
+  ) {
+    updateSettings({
+      triggeredCircles: {
+        ...settings.triggeredCircles,
+        ...patch,
+      },
     })
   }
 
@@ -1231,11 +1296,94 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
         />
       </section>
 
+      <VisualCvPreviewPanel
+        ref={visualCvPreviewRef}
+        resetKey={[
+          audioInstanceId,
+          settings.gain,
+          settings.sampleStartPercent,
+          settings.sampleEndPercent,
+        ].join(":")}
+        settings={settings.visualCv}
+        onSettingsChange={updateVisualCv}
+      />
+
       <section className="audio-pulse-panel" aria-label="Triggered circle behavior">
         <header>
           <p className="eyebrow">Triggered Circles</p>
-          <h2>Rise/Fall Pulse</h2>
+          <h2>CV Routed Pulse</h2>
         </header>
+        <div className="audio-cv-routing-grid">
+          <label className="control-field">
+            <span>Trigger Source</span>
+            <select
+              value={settings.triggeredCircles.triggerSource}
+              onChange={(event) =>
+                updateTriggeredCircles({
+                  triggerSource: event.currentTarget.value as VisualCvTriggerSource,
+                })
+              }
+            >
+              {triggeredCircleTriggerSourceOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="control-field">
+            <span>Size Source</span>
+            <select
+              value={settings.triggeredCircles.sizeSource}
+              onChange={(event) =>
+                updateTriggeredCircles({
+                  sizeSource: event.currentTarget.value as VisualCvModulationSource,
+                })
+              }
+            >
+              {visualCvModulationSourceOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="control-field">
+            <span>Grow Source</span>
+            <select
+              value={settings.triggeredCircles.growSource}
+              onChange={(event) =>
+                updateTriggeredCircles({
+                  growSource: event.currentTarget.value as VisualCvModulationSource,
+                })
+              }
+            >
+              {visualCvModulationSourceOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="control-field">
+            <span>Release Source</span>
+            <select
+              value={settings.triggeredCircles.releaseSource}
+              onChange={(event) =>
+                updateTriggeredCircles({
+                  releaseSource:
+                    event.currentTarget.value as VisualCvModulationSource,
+                })
+              }
+            >
+              {visualCvModulationSourceOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <label className="audio-checkbox-field">
           <input
             type="checkbox"
@@ -1393,7 +1541,7 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
                       })
                     }
                   />
-                  <span>Use Level Motion</span>
+                  <span>Use CV Motion</span>
                 </label>
 
                 {mapping.enabled ? (
@@ -1408,8 +1556,11 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
                           })
                         }
                       >
-                        <option value="rise-fall">Rise/Fall</option>
-                        <option value="level">Level</option>
+                        {shapeMotionSourceOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
                       </select>
                     </label>
                     <label className="control-field">
@@ -1574,15 +1725,6 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
         </div>
       </section>
 
-      <VisualCvPreviewPanel
-        ref={visualCvPreviewRef}
-        resetKey={[
-          audioInstanceId,
-          settings.gain,
-          settings.sampleStartPercent,
-          settings.sampleEndPercent,
-        ].join(":")}
-      />
     </main>
   )
 }

@@ -1,5 +1,9 @@
 import type { PatchDefinition } from "@/features/stage/patches/patchTypes"
 import type { AudioControlledShapeSettings } from "@/features/shapeGenerator/shapeGeneratorTypes"
+import type {
+  TriggeredCircleVisualCvRouting,
+  VisualCvSettings,
+} from "@/features/visualCv/visualCvTypes"
 
 export type VisualizerClientRole =
   | "controller"
@@ -41,6 +45,8 @@ export type AudioCircleSettings = {
   circleFadeOnFall: boolean
   circleShrinkOnFall: boolean
   circleLevelControlsSize: boolean
+  triggeredCircles: TriggeredCircleVisualCvRouting
+  visualCv: VisualCvSettings
   centerShape: AudioControlledShapeSettings
 }
 

@@ -20,7 +20,13 @@ export type ShapeParameters = {
 export type ShapeParameterName = keyof ShapeParameters
 export type ShapeControlName = ShapeParameterName | "rotation"
 
-export type ShapeMotionSource = "level" | "rise-fall"
+export type ShapeMotionSource =
+  | "level"
+  | "rise-fall"
+  | "motion"
+  | "smooth"
+  | "envelope"
+  | "syncSine"
 
 export type ShapeMotionMapping = {
   enabled: boolean

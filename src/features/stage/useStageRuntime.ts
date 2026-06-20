@@ -12,13 +12,23 @@ import type {
   SongCommandMessage,
   SongTransportUpdateMessage,
 } from "@/features/network/protocolTypes"
-import type { AudioWorkletTriggerEvent } from "@/features/audio/useAudioAnalyser"
 import { getVisualizerSocketUrl } from "@/features/network/protocol"
 import {
   sampleSpectrumRange,
   updateAudioRouteSignalState,
 } from "@/features/controller/audio/audioRoutingLogic"
 import type { AudioRouteFollowerState } from "@/features/controller/audio/audioRoutingLogic"
+import {
+  defaultTriggeredCircleRouting,
+  defaultVisualCvSettings,
+} from "@/features/visualCv/visualCvDefaults"
+import {
+  createRoutedAudioRouteSignal,
+  getVisualCvModulationValue,
+  isVisualCvTriggerActive,
+  updateVisualCvRouteSignal,
+} from "@/features/visualCv/visualCvLogic"
+import type { VisualCvRouteState } from "@/features/visualCv/visualCvLogic"
 import {
   getFrameAtTime,
 } from "@/features/songs/songAnalysisLogic"
@@ -104,13 +114,11 @@ function getPointerWorld(
 export function useStageRuntime() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const socketRef = useRef<WebSocket | null>(null)
-  const audioTriggerHandlerRef = useRef<
-    ((event: AudioWorkletTriggerEvent) => void) | null
-  >(null)
   const audioFrameHandlerRef = useRef<((frame: AudioAnalysisFrame) => void) | null>(
     null,
   )
   const audioRouteSettingsRef = useRef(new Map<string, AudioCircleSettings>())
+  const visualCvRouteStatesRef = useRef(new Map<string, VisualCvRouteState>())
   const songAnalysisRef = useRef<SongAnalysis | null>(null)
   const songAudioRef = useRef<HTMLAudioElement | null>(null)
   const songAnimationFrameRef = useRef<number | null>(null)
@@ -125,10 +133,6 @@ export function useStageRuntime() {
   const [audioRoutes, setAudioRoutes] = useState<StageAudioRouteConfig[]>([])
   const [songTransport, setSongTransport] =
     useState<SongTransportUpdateMessage>(idleSongTransport)
-
-  const handleAudioTrigger = useCallback((event: AudioWorkletTriggerEvent) => {
-    audioTriggerHandlerRef.current?.(event)
-  }, [])
 
   const sendAudioFrame = useCallback((frame: AudioAnalysisFrame) => {
     audioFrameHandlerRef.current?.(frame)
@@ -178,6 +182,7 @@ export function useStageRuntime() {
 
   const resetSongRouteState = useCallback(() => {
     songRouteStatesRef.current.clear()
+    visualCvRouteStatesRef.current.clear()
     songSequenceRef.current = 0
   }, [])
 
@@ -194,7 +199,6 @@ export function useStageRuntime() {
 
     if (analysisFrame) {
       const routes: AudioRouteSignal[] = []
-      const triggers: AudioWorkletTriggerEvent[] = []
 
       audioRouteSettingsRef.current.forEach((settings, audioInstanceId) => {
         const rawLevel = sampleSpectrumRange(
@@ -229,17 +233,6 @@ export function useStageRuntime() {
         }
 
         routes.push(routeSignal)
-
-        if (result.triggered) {
-          triggers.push({
-            audioInstanceId,
-            color: settings.circleColor,
-            level: result.level,
-            riseAmount: result.riseAmount,
-            fallAmount: result.fallAmount,
-            timestamp: timeMs,
-          })
-        }
       })
 
       const frame: AudioAnalysisFrame = {
@@ -258,7 +251,6 @@ export function useStageRuntime() {
 
       songSequenceRef.current += 1
       sendAudioFrame(frame)
-      triggers.forEach((trigger) => handleAudioTrigger(trigger))
     }
 
     if (timeMs - lastSongTransportUpdateAtRef.current >= 250) {
@@ -272,7 +264,7 @@ export function useStageRuntime() {
     }
 
     songAnimationFrameRef.current = requestAnimationFrame(emitSongFrame)
-  }, [handleAudioTrigger, publishSongTransport, sendAudioFrame])
+  }, [publishSongTransport, sendAudioFrame])
 
   const stopSong = useCallback(() => {
     stopSongAnalysisLoop()
@@ -454,7 +446,6 @@ export function useStageRuntime() {
       audioRoutes,
       canvasRef,
       connectionStatus,
-      handleAudioTrigger,
       sendAudioFrame,
       songTransport,
       stopSong,
@@ -462,7 +453,6 @@ export function useStageRuntime() {
     [
       audioRoutes,
       connectionStatus,
-      handleAudioTrigger,
       sendAudioFrame,
       songTransport,
       stopSong,
@@ -503,39 +493,80 @@ export function useStageRuntime() {
 
     audioFrameHandlerRef.current = (frame) => {
       frame.routes?.forEach((routeSignal: AudioRouteSignal) => {
-        centerShape.receiveAudioRouteSignal(routeSignal)
-        ripplePaint.receiveAudioRouteSignal(routeSignal)
-      })
-    }
+        const settings = audioRouteSettingsRef.current.get(
+          routeSignal.audioInstanceId,
+        )
 
-    audioTriggerHandlerRef.current = (event) => {
-      const settings = audioRouteSettingsRef.current.get(event.audioInstanceId)
-      const hasAudioMotion =
-        settings?.circleGrowOnRise === true ||
-        settings?.circleFadeOnFall === true ||
-        settings?.circleShrinkOnFall === true ||
-        settings?.circleLevelControlsSize === true
+        if (!settings) {
+          return
+        }
 
-      ripplePaint.receiveInput({
-        id: `audio-${event.audioInstanceId}-${event.timestamp}-${Math.random().toString(36).slice(2, 7)}`,
-        userId: event.audioInstanceId,
-        x: (Math.random() - 0.5) * world.worldWidth,
-        y: (0.5 - Math.random()) * world.worldHeight,
-        speed: event.level * 4,
-        color: event.color,
-        audioMotion:
-          settings && hasAudioMotion
+        const visualCvResult = updateVisualCvRouteSignal({
+          routeSignal,
+          settings: settings.visualCv ?? defaultVisualCvSettings,
+          state:
+            visualCvRouteStatesRef.current.get(routeSignal.audioInstanceId) ??
+            null,
+          timestamp: frame.timestamp,
+        })
+        const visualCvSignal = visualCvResult.signal
+        const circleRouting =
+          settings.triggeredCircles ?? defaultTriggeredCircleRouting
+        const routedRouteSignal = createRoutedAudioRouteSignal({
+          routeSignal,
+          routing: circleRouting,
+          visualCvSignal,
+        })
+
+        visualCvRouteStatesRef.current.set(
+          routeSignal.audioInstanceId,
+          visualCvResult.state,
+        )
+        centerShape.receiveVisualCvRouteSignal(visualCvSignal)
+        ripplePaint.receiveAudioRouteSignal(routedRouteSignal)
+
+        if (!isVisualCvTriggerActive(visualCvSignal, circleRouting.triggerSource)) {
+          return
+        }
+
+        const level = getVisualCvModulationValue(
+          visualCvSignal,
+          circleRouting.sizeSource,
+        )
+        const riseAmount = getVisualCvModulationValue(
+          visualCvSignal,
+          circleRouting.growSource,
+        )
+        const fallAmount = getVisualCvModulationValue(
+          visualCvSignal,
+          circleRouting.releaseSource,
+        )
+        const hasAudioMotion =
+          settings.circleGrowOnRise === true ||
+          settings.circleFadeOnFall === true ||
+          settings.circleShrinkOnFall === true ||
+          settings.circleLevelControlsSize === true
+
+        ripplePaint.receiveInput({
+          id: `audio-${routeSignal.audioInstanceId}-${frame.timestamp}-${Math.random().toString(36).slice(2, 7)}`,
+          userId: routeSignal.audioInstanceId,
+          x: (Math.random() - 0.5) * world.worldWidth,
+          y: (0.5 - Math.random()) * world.worldHeight,
+          speed: level * 4,
+          color: settings.circleColor,
+          audioMotion: hasAudioMotion
             ? {
-                audioInstanceId: event.audioInstanceId,
+                audioInstanceId: routeSignal.audioInstanceId,
                 growOnRise: settings.circleGrowOnRise,
                 fadeOnFall: settings.circleFadeOnFall,
                 shrinkOnFall: settings.circleShrinkOnFall,
                 levelControlsSize: settings.circleLevelControlsSize,
-                level: event.level,
-                riseAmount: event.riseAmount,
-                fallAmount: event.fallAmount,
+                level,
+                riseAmount,
+                fallAmount,
               }
             : undefined,
+        })
       })
     }
 
@@ -623,6 +654,7 @@ export function useStageRuntime() {
           )
         })
         centerShape.receiveAudioSettings(message.audioInstanceId, message.settings)
+        visualCvRouteStatesRef.current.delete(message.audioInstanceId)
       }
 
       if (message.type === "audio_settings_delete") {
@@ -632,6 +664,7 @@ export function useStageRuntime() {
           ),
         )
         songRouteStatesRef.current.delete(message.audioInstanceId)
+        visualCvRouteStatesRef.current.delete(message.audioInstanceId)
         centerShape.removeAudioInstance(message.audioInstanceId)
       }
     })
@@ -703,7 +736,6 @@ export function useStageRuntime() {
 
     return () => {
       loop.stop()
-      audioTriggerHandlerRef.current = null
       audioFrameHandlerRef.current = null
       socket.close()
       socketRef.current = null

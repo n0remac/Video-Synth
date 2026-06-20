@@ -1,13 +1,14 @@
 import * as THREE from "three"
 import type {
   AudioCircleSettings,
-  AudioRouteSignal,
 } from "@/features/network/protocolTypes"
 import type {
   AudioControlledShapeSettings,
   ShapeControlName,
   ShapeParameters,
 } from "@/features/shapeGenerator/shapeGeneratorTypes"
+import type { VisualCvRouteSignal } from "@/features/visualCv/visualCvTypes"
+import { getVisualCvModulationValue } from "@/features/visualCv/visualCvLogic"
 import {
   buildShape,
   clearGroup,
@@ -54,7 +55,7 @@ const shapeParameterNames: Array<keyof ShapeParameters> = [
 function getMotionValue(
   shape: AudioControlledShapeSettings,
   controlName: ShapeControlName,
-  signal: AudioRouteSignal | null,
+  signal: VisualCvRouteSignal | null,
 ) {
   const mapping = shape.motionMappings[controlName]
 
@@ -62,12 +63,12 @@ function getMotionValue(
     return 0
   }
 
-  const value =
-    mapping.source === "level"
-      ? signal.level * mapping.amount
-      : (signal.riseAmount - signal.fallAmount) * mapping.amount
+  const routedValue =
+    mapping.source === "rise-fall"
+      ? (signal.riseAmount - signal.fallAmount) * mapping.amount
+      : getVisualCvModulationValue(signal, mapping.source) * mapping.amount
 
-  return mapping.invert ? -value : value
+  return mapping.invert ? -routedValue : routedValue
 }
 
 function applyControlRange(
@@ -101,7 +102,7 @@ function getBaseControlValue(
 function getEffectiveControlValue(
   shape: AudioControlledShapeSettings,
   controlName: ShapeControlName,
-  signal: AudioRouteSignal | null,
+  signal: VisualCvRouteSignal | null,
 ) {
   return applyControlRange(
     getBaseControlValue(shape, controlName) +
@@ -113,7 +114,7 @@ function getEffectiveControlValue(
 
 function getEffectiveShape(
   shape: AudioControlledShapeSettings,
-  signal: AudioRouteSignal | null,
+  signal: VisualCvRouteSignal | null,
 ) {
   const parameters = shapeParameterNames.reduce((nextParameters, parameterName) => {
     nextParameters[parameterName] = getEffectiveControlValue(
@@ -144,7 +145,7 @@ export class CenterShapeModule implements StageModule {
 
   private audioSettingsByInstanceId = new Map<string, AudioCircleSettings>()
 
-  private routeSignalsByInstanceId = new Map<string, AudioRouteSignal>()
+  private routeSignalsByInstanceId = new Map<string, VisualCvRouteSignal>()
 
   private renderedSignature = ""
 
@@ -182,7 +183,7 @@ export class CenterShapeModule implements StageModule {
     this.syncShape()
   }
 
-  receiveAudioRouteSignal(routeSignal: AudioRouteSignal) {
+  receiveVisualCvRouteSignal(routeSignal: VisualCvRouteSignal) {
     this.routeSignalsByInstanceId.set(routeSignal.audioInstanceId, routeSignal)
 
     if (routeSignal.audioInstanceId === this.activeAudioInstanceId) {

@@ -8,12 +8,9 @@ import {
   useState,
 } from "react"
 import {
-  defaultVisualCvEnvelopeConfig,
-  defaultVisualCvSmoothConfig,
-} from "@/features/visualCv/visualCvDefaults"
-import {
   updateVisualCvEnvelope,
   updateVisualCvSmooth,
+  updateVisualCvSyncSine,
 } from "@/features/visualCv/visualCvLogic"
 import type {
   VisualCvEnvelopeConfig,
@@ -21,8 +18,13 @@ import type {
   VisualCvEnvelopeState,
   VisualCvInputFrame,
   VisualCvInputSignal,
+  VisualCvSettings,
   VisualCvSmoothConfig,
   VisualCvSmoothState,
+  VisualCvSyncSineConfig,
+  VisualCvSyncSinePhaseMode,
+  VisualCvSyncSineState,
+  VisualCvSyncSineSyncMode,
 } from "@/features/visualCv/visualCvTypes"
 import { ControlSlider } from "../shared/ControlSlider"
 
@@ -32,12 +34,15 @@ export type VisualCvPreviewPanelHandle = {
 
 type VisualCvPreviewPanelProps = {
   resetKey: string
+  settings: VisualCvSettings
+  onSettingsChange(settings: VisualCvSettings): void
 }
 
 type CvHistorySample = {
   timestamp: number
   raw: number
   output: number
+  triggered?: boolean
 }
 
 type VisualCvSnapshot = {
@@ -47,6 +52,12 @@ type VisualCvSnapshot = {
   envelopeRaw: number
   envelopeOutput: number
   envelopePhase: VisualCvEnvelopePhase
+  syncSineRaw: number
+  syncSineOutput: number
+  syncSineTriggered: boolean
+  syncSineBasePeriodMs: number | null
+  syncSineCycleMs: number | null
+  syncSineSpikeCount: number
 }
 
 const historyDurationMs = 8000
@@ -61,6 +72,26 @@ const visualCvInputOptions: Array<{
   { value: "motion", label: "Motion" },
 ]
 
+const syncSinePhaseOptions: Array<{
+  value: VisualCvSyncSinePhaseMode
+  label: string
+}> = [
+  { value: "peakOnSpike", label: "Peak" },
+  { value: "zeroRisingOnSpike", label: "Zero Rising" },
+  { value: "troughOnSpike", label: "Trough" },
+  { value: "zeroFallingOnSpike", label: "Zero Falling" },
+]
+
+const syncSineSyncOptions: Array<{
+  value: VisualCvSyncSineSyncMode
+  label: string
+}> = [
+  { value: "soft", label: "Soft" },
+  { value: "hard", label: "Hard" },
+]
+
+const syncSineLengthOptions = [1, 2, 3, 4, 8]
+
 const emptySnapshot: VisualCvSnapshot = {
   input: null,
   smoothRaw: 0,
@@ -68,6 +99,12 @@ const emptySnapshot: VisualCvSnapshot = {
   envelopeRaw: 0,
   envelopeOutput: 0,
   envelopePhase: "idle",
+  syncSineRaw: 0,
+  syncSineOutput: 0.5,
+  syncSineTriggered: false,
+  syncSineBasePeriodMs: null,
+  syncSineCycleMs: null,
+  syncSineSpikeCount: 0,
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -76,6 +113,10 @@ function clamp(value: number, min: number, max: number): number {
 
 function formatPercent(value: number | undefined) {
   return `${Math.round((value ?? 0) * 100)}%`
+}
+
+function formatPeriod(value: number | null) {
+  return value === null ? "Waiting" : `${Math.round(value)}ms`
 }
 
 function getInputLabel(input: VisualCvInputSignal) {
@@ -238,6 +279,25 @@ function drawVisualCvGraph({
     context.setLineDash([])
   }
 
+  history.forEach((sample) => {
+    if (!sample.triggered) {
+      return
+    }
+
+    const startTime = now - historyDurationMs
+    const x =
+      graphX +
+      clamp((sample.timestamp - startTime) / historyDurationMs, 0, 1) *
+        graphWidth
+
+    context.strokeStyle = "rgba(255, 225, 86, 0.74)"
+    context.lineWidth = 1
+    context.beginPath()
+    context.moveTo(x, graphY)
+    context.lineTo(x, graphY + graphHeight)
+    context.stroke()
+  })
+
   if (history.length < 2) {
     context.fillStyle = "rgba(247, 247, 255, 0.5)"
     context.font = "700 12px sans-serif"
@@ -277,26 +337,24 @@ function drawVisualCvGraph({
 export const VisualCvPreviewPanel = forwardRef<
   VisualCvPreviewPanelHandle,
   VisualCvPreviewPanelProps
->(function VisualCvPreviewPanel({ resetKey }, ref) {
+>(function VisualCvPreviewPanel({ onSettingsChange, resetKey, settings }, ref) {
   const smoothCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const envelopeCanvasRef = useRef<HTMLCanvasElement | null>(null)
-  const smoothConfigRef = useRef<VisualCvSmoothConfig>(
-    defaultVisualCvSmoothConfig,
-  )
-  const envelopeConfigRef = useRef<VisualCvEnvelopeConfig>(
-    defaultVisualCvEnvelopeConfig,
-  )
+  const syncSineCanvasRef = useRef<HTMLCanvasElement | null>(null)
+  const smoothConfigRef = useRef<VisualCvSmoothConfig>(settings.smooth)
+  const envelopeConfigRef = useRef<VisualCvEnvelopeConfig>(settings.envelope)
+  const syncSineConfigRef = useRef<VisualCvSyncSineConfig>(settings.syncSine)
   const smoothStateRef = useRef<VisualCvSmoothState | null>(null)
   const envelopeStateRef = useRef<VisualCvEnvelopeState | null>(null)
+  const syncSineStateRef = useRef<VisualCvSyncSineState | null>(null)
   const smoothHistoryRef = useRef<CvHistorySample[]>([])
   const envelopeHistoryRef = useRef<CvHistorySample[]>([])
+  const syncSineHistoryRef = useRef<CvHistorySample[]>([])
   const lastSnapshotAtRef = useRef(Number.NEGATIVE_INFINITY)
-  const [smoothConfig, setSmoothConfig] = useState<VisualCvSmoothConfig>(
-    defaultVisualCvSmoothConfig,
-  )
-  const [envelopeConfig, setEnvelopeConfig] =
-    useState<VisualCvEnvelopeConfig>(defaultVisualCvEnvelopeConfig)
   const [snapshot, setSnapshot] = useState<VisualCvSnapshot>(emptySnapshot)
+  const smoothConfig = settings.smooth
+  const envelopeConfig = settings.envelope
+  const syncSineConfig = settings.syncSine
 
   useEffect(() => {
     smoothConfigRef.current = smoothConfig
@@ -313,10 +371,22 @@ export const VisualCvPreviewPanel = forwardRef<
   }, [envelopeConfig])
 
   useEffect(() => {
+    syncSineConfigRef.current = syncSineConfig
+    drawVisualCvGraph({
+      canvas: syncSineCanvasRef.current,
+      history: syncSineHistoryRef.current,
+      now: syncSineHistoryRef.current.at(-1)?.timestamp ?? 0,
+      threshold: syncSineConfig.threshold,
+    })
+  }, [syncSineConfig])
+
+  useEffect(() => {
     smoothStateRef.current = null
     envelopeStateRef.current = null
+    syncSineStateRef.current = null
     smoothHistoryRef.current = []
     envelopeHistoryRef.current = []
+    syncSineHistoryRef.current = []
     lastSnapshotAtRef.current = Number.NEGATIVE_INFINITY
     setSnapshot(emptySnapshot)
     drawVisualCvGraph({
@@ -329,6 +399,12 @@ export const VisualCvPreviewPanel = forwardRef<
       history: [],
       now: 0,
       threshold: envelopeConfigRef.current.threshold,
+    })
+    drawVisualCvGraph({
+      canvas: syncSineCanvasRef.current,
+      history: [],
+      now: 0,
+      threshold: syncSineConfigRef.current.threshold,
     })
   }, [resetKey])
 
@@ -346,9 +422,15 @@ export const VisualCvPreviewPanel = forwardRef<
           frame: input,
           state: envelopeStateRef.current,
         })
+        const syncSineResult = updateVisualCvSyncSine({
+          config: syncSineConfigRef.current,
+          frame: input,
+          state: syncSineStateRef.current,
+        })
 
         smoothStateRef.current = smoothResult.state
         envelopeStateRef.current = envelopeResult.state
+        syncSineStateRef.current = syncSineResult.state
         smoothHistoryRef.current = trimHistory(
           [
             ...smoothHistoryRef.current,
@@ -367,6 +449,19 @@ export const VisualCvPreviewPanel = forwardRef<
               timestamp: input.timestamp,
               raw: envelopeResult.raw,
               output: envelopeResult.output,
+              triggered: envelopeResult.triggered,
+            },
+          ],
+          input.timestamp,
+        )
+        syncSineHistoryRef.current = trimHistory(
+          [
+            ...syncSineHistoryRef.current,
+            {
+              timestamp: input.timestamp,
+              raw: syncSineResult.raw,
+              output: syncSineResult.output,
+              triggered: syncSineResult.triggered,
             },
           ],
           input.timestamp,
@@ -383,6 +478,12 @@ export const VisualCvPreviewPanel = forwardRef<
           now: input.timestamp,
           threshold: envelopeConfigRef.current.threshold,
         })
+        drawVisualCvGraph({
+          canvas: syncSineCanvasRef.current,
+          history: syncSineHistoryRef.current,
+          now: input.timestamp,
+          threshold: syncSineConfigRef.current.threshold,
+        })
 
         if (
           input.timestamp < lastSnapshotAtRef.current ||
@@ -396,12 +497,48 @@ export const VisualCvPreviewPanel = forwardRef<
             envelopeRaw: envelopeResult.raw,
             envelopeOutput: envelopeResult.output,
             envelopePhase: envelopeResult.state.phase,
+            syncSineRaw: syncSineResult.raw,
+            syncSineOutput: syncSineResult.output,
+            syncSineTriggered: syncSineResult.triggered,
+            syncSineBasePeriodMs: syncSineResult.state.smoothedBasePeriodMs,
+            syncSineCycleMs: syncSineResult.cycleMs,
+            syncSineSpikeCount: syncSineResult.state.spikeTimes.length,
           })
         }
       },
     }),
     [],
   )
+
+  function updateSmoothConfig(patch: Partial<VisualCvSmoothConfig>) {
+    onSettingsChange({
+      ...settings,
+      smooth: {
+        ...smoothConfig,
+        ...patch,
+      },
+    })
+  }
+
+  function updateEnvelopeConfig(patch: Partial<VisualCvEnvelopeConfig>) {
+    onSettingsChange({
+      ...settings,
+      envelope: {
+        ...envelopeConfig,
+        ...patch,
+      },
+    })
+  }
+
+  function updateSyncSineConfig(patch: Partial<VisualCvSyncSineConfig>) {
+    onSettingsChange({
+      ...settings,
+      syncSine: {
+        ...syncSineConfig,
+        ...patch,
+      },
+    })
+  }
 
   function updateSmoothInput(input: VisualCvInputSignal) {
     smoothStateRef.current = null
@@ -411,10 +548,7 @@ export const VisualCvPreviewPanel = forwardRef<
       history: [],
       now: 0,
     })
-    setSmoothConfig((currentConfig) => ({
-      ...currentConfig,
-      input,
-    }))
+    updateSmoothConfig({ input })
   }
 
   return (
@@ -476,10 +610,7 @@ export const VisualCvPreviewPanel = forwardRef<
               max={1500}
               step={10}
               onValueChange={(riseMs) =>
-                setSmoothConfig((currentConfig) => ({
-                  ...currentConfig,
-                  riseMs,
-                }))
+                updateSmoothConfig({ riseMs })
               }
             />
             <ControlSlider
@@ -489,10 +620,7 @@ export const VisualCvPreviewPanel = forwardRef<
               max={1500}
               step={10}
               onValueChange={(fallMs) =>
-                setSmoothConfig((currentConfig) => ({
-                  ...currentConfig,
-                  fallMs,
-                }))
+                updateSmoothConfig({ fallMs })
               }
             />
           </div>
@@ -537,10 +665,7 @@ export const VisualCvPreviewPanel = forwardRef<
               max={1}
               step={0.01}
               onValueChange={(threshold) =>
-                setEnvelopeConfig((currentConfig) => ({
-                  ...currentConfig,
-                  threshold,
-                }))
+                updateEnvelopeConfig({ threshold })
               }
             />
             <ControlSlider
@@ -550,10 +675,7 @@ export const VisualCvPreviewPanel = forwardRef<
               max={1000}
               step={10}
               onValueChange={(attackMs) =>
-                setEnvelopeConfig((currentConfig) => ({
-                  ...currentConfig,
-                  attackMs,
-                }))
+                updateEnvelopeConfig({ attackMs })
               }
             />
             <ControlSlider
@@ -563,10 +685,7 @@ export const VisualCvPreviewPanel = forwardRef<
               max={2500}
               step={10}
               onValueChange={(decayMs) =>
-                setEnvelopeConfig((currentConfig) => ({
-                  ...currentConfig,
-                  decayMs,
-                }))
+                updateEnvelopeConfig({ decayMs })
               }
             />
             <ControlSlider
@@ -576,10 +695,7 @@ export const VisualCvPreviewPanel = forwardRef<
               max={1200}
               step={10}
               onValueChange={(cooldownMs) =>
-                setEnvelopeConfig((currentConfig) => ({
-                  ...currentConfig,
-                  cooldownMs,
-                }))
+                updateEnvelopeConfig({ cooldownMs })
               }
             />
           </div>
@@ -602,6 +718,144 @@ export const VisualCvPreviewPanel = forwardRef<
                 <i style={{ width: formatPercent(snapshot.envelopeOutput) }} />
               </div>
               <strong>{formatPercent(snapshot.envelopeOutput)}</strong>
+            </div>
+          </div>
+        </article>
+
+        <article className="visual-cv-module">
+          <header>
+            <div>
+              <p className="eyebrow">CV Sync Sine</p>
+              <h3>Motion Locked</h3>
+            </div>
+            <div className="visual-cv-phase" data-phase={syncSineConfig.syncMode}>
+              {syncSineConfig.syncMode}
+            </div>
+          </header>
+          <div className="visual-cv-controls">
+            <ControlSlider
+              label="Threshold"
+              value={syncSineConfig.threshold}
+              min={0}
+              max={1}
+              step={0.01}
+              onValueChange={(threshold) =>
+                updateSyncSineConfig({ threshold })
+              }
+            />
+            <ControlSlider
+              label="Hysteresis"
+              value={syncSineConfig.hysteresis}
+              min={0}
+              max={0.5}
+              step={0.01}
+              onValueChange={(hysteresis) =>
+                updateSyncSineConfig({ hysteresis })
+              }
+            />
+            <ControlSlider
+              label="Cooldown ms"
+              value={syncSineConfig.cooldownMs}
+              min={0}
+              max={1200}
+              step={10}
+              onValueChange={(cooldownMs) =>
+                updateSyncSineConfig({ cooldownMs })
+              }
+            />
+            <label className="control-field">
+              <span>
+                Length <strong>{syncSineConfig.lengthMultiple}x</strong>
+              </span>
+              <select
+                value={syncSineConfig.lengthMultiple}
+                onChange={(event) => {
+                  const lengthMultiple = Number(event.currentTarget.value)
+
+                  updateSyncSineConfig({ lengthMultiple })
+                }}
+              >
+                {syncSineLengthOptions.map((multiple) => (
+                  <option key={multiple} value={multiple}>
+                    {multiple}x
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="control-field">
+              <span>Phase</span>
+              <select
+                value={syncSineConfig.phaseMode}
+                onChange={(event) => {
+                  const phaseMode = event.currentTarget
+                    .value as VisualCvSyncSinePhaseMode
+
+                  updateSyncSineConfig({ phaseMode })
+                }}
+              >
+                {syncSinePhaseOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="control-field">
+              <span>Sync</span>
+              <select
+                value={syncSineConfig.syncMode}
+                onChange={(event) => {
+                  const syncMode = event.currentTarget
+                    .value as VisualCvSyncSineSyncMode
+
+                  updateSyncSineConfig({ syncMode })
+                }}
+              >
+                {syncSineSyncOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <canvas
+            ref={syncSineCanvasRef}
+            className="visual-cv-canvas"
+            aria-label="Sync Sine CV spike input and output graph"
+          />
+          <div className="visual-cv-readout-grid">
+            <div>
+              <span>Period</span>
+              <strong>{formatPeriod(snapshot.syncSineBasePeriodMs)}</strong>
+            </div>
+            <div>
+              <span>Cycle</span>
+              <strong>{formatPeriod(snapshot.syncSineCycleMs)}</strong>
+            </div>
+            <div>
+              <span>Spikes</span>
+              <strong>{snapshot.syncSineSpikeCount}</strong>
+            </div>
+            <div>
+              <span>Hit</span>
+              <strong>{snapshot.syncSineTriggered ? "Yes" : "No"}</strong>
+            </div>
+          </div>
+          <div className="visual-cv-meter-grid">
+            <div className="visual-cv-meter" data-kind="raw">
+              <span>Raw</span>
+              <div>
+                <i style={{ width: formatPercent(snapshot.syncSineRaw) }} />
+              </div>
+              <strong>{formatPercent(snapshot.syncSineRaw)}</strong>
+            </div>
+            <div className="visual-cv-meter" data-kind="output">
+              <span>Sine</span>
+              <div>
+                <i style={{ width: formatPercent(snapshot.syncSineOutput) }} />
+              </div>
+              <strong>{formatPercent(snapshot.syncSineOutput)}</strong>
             </div>
           </div>
         </article>

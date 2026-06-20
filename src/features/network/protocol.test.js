@@ -19,6 +19,37 @@ const validAudioSettings = {
   circleFadeOnFall: false,
   circleShrinkOnFall: false,
   circleLevelControlsSize: false,
+  triggeredCircles: {
+    triggerSource: "range",
+    sizeSource: "level",
+    growSource: "rise",
+    releaseSource: "fall",
+  },
+  visualCv: {
+    smooth: {
+      input: "level",
+      riseMs: 180,
+      fallMs: 320,
+    },
+    envelope: {
+      threshold: 0.35,
+      attackMs: 80,
+      decayMs: 420,
+      cooldownMs: 180,
+    },
+    syncSine: {
+      input: "motion",
+      threshold: 0.35,
+      hysteresis: 0.08,
+      cooldownMs: 160,
+      lengthMultiple: 2,
+      phaseMode: "peakOnSpike",
+      syncMode: "soft",
+      historyMs: 6000,
+      periodSmoothMs: 300,
+      phaseCorrectionAmount: 0.15,
+    },
+  },
   centerShape: {
     enabled: false,
     mode: "2d",
