@@ -119,6 +119,7 @@ export type VisualCvRouteSignal = {
   smooth: number
   envelope: number
   syncSine: number
+  frequencyHz: number
   rangeTriggered: boolean
   envelopeTriggered: boolean
   syncSineTriggered: boolean

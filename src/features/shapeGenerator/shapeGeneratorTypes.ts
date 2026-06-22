@@ -1,3 +1,5 @@
+import type { VisualCvModulationSource } from "@/features/visualCv/visualCvTypes"
+
 export type ShapeMode = "2d" | "3d"
 
 export type ShapeFamily =
@@ -18,7 +20,23 @@ export type ShapeParameters = {
 }
 
 export type ShapeParameterName = keyof ShapeParameters
-export type ShapeControlName = ShapeParameterName | "rotation"
+
+export type ShapeVector3 = {
+  x: number
+  y: number
+  z: number
+}
+
+export type ShapeTransformControlName =
+  | "positionX"
+  | "positionY"
+  | "positionZ"
+  | "rotationX"
+  | "rotationY"
+  | "rotationZ"
+  | "colorHue"
+
+export type ShapeControlName = ShapeParameterName | ShapeTransformControlName
 
 export type ShapeMotionSource =
   | "level"
@@ -28,19 +46,44 @@ export type ShapeMotionSource =
   | "envelope"
   | "syncSine"
 
+export type ShapeMotionMode = "oscillate" | "continuous"
+
 export type ShapeMotionMapping = {
   enabled: boolean
   source: ShapeMotionSource
   amount: number
   invert: boolean
+  mode: ShapeMotionMode
+  resetMs: number
+}
+
+export type ShapePositionMode = "manual" | "spiral"
+
+export type ShapeSpiralMotionDirection = "clockwise" | "counterclockwise"
+
+export type ShapeSpiralMotionSettings = {
+  enabled: boolean
+  visualize: boolean
+  startRadius: number
+  radiusSource: VisualCvModulationSource
+  radiusCvAmount: number
+  degreesPerPulse: number
+  depthPerPulse: number
+  resetMs: number
+  direction: ShapeSpiralMotionDirection
+  startPhaseDegrees: number
 }
 
 export type AudioControlledShapeSettings = {
   enabled: boolean
   mode: ShapeMode
   family: ShapeFamily
+  color: string
   parameters: ShapeParameters
-  rotation: number
+  positionMode: ShapePositionMode
+  position: ShapeVector3
+  rotation: ShapeVector3
+  spiralMotion: ShapeSpiralMotionSettings
   motionMappings: Record<ShapeControlName, ShapeMotionMapping>
 }
 
@@ -64,7 +107,13 @@ export const shapeParameterNames: ShapeParameterName[] = [
 
 export const shapeControlNames: ShapeControlName[] = [
   ...shapeParameterNames,
-  "rotation",
+  "positionX",
+  "positionY",
+  "positionZ",
+  "rotationX",
+  "rotationY",
+  "rotationZ",
+  "colorHue",
 ]
 
 export const defaultShapeParameters: ShapeParameters = {
@@ -83,6 +132,21 @@ export const defaultShapeMotionMapping: ShapeMotionMapping = {
   source: "rise-fall",
   amount: 0,
   invert: false,
+  mode: "oscillate",
+  resetMs: 2000,
+}
+
+export const defaultShapeSpiralMotionSettings: ShapeSpiralMotionSettings = {
+  enabled: false,
+  visualize: true,
+  startRadius: 0.65,
+  radiusSource: "smooth",
+  radiusCvAmount: 0.25,
+  degreesPerPulse: 180,
+  depthPerPulse: 0.5,
+  resetMs: 4000,
+  direction: "clockwise",
+  startPhaseDegrees: 0,
 }
 
 export function createDefaultShapeMotionMappings(): Record<
@@ -103,8 +167,12 @@ export function createDefaultAudioControlledShapeSettings(): AudioControlledShap
     enabled: false,
     mode: "2d",
     family: "prism",
+    color: "#00d1ff",
     parameters: { ...defaultShapeParameters },
-    rotation: 0,
+    positionMode: "manual",
+    position: { x: 0, y: 0, z: 0 },
+    rotation: { x: 0, y: 0, z: 0 },
+    spiralMotion: { ...defaultShapeSpiralMotionSettings },
     motionMappings: createDefaultShapeMotionMappings(),
   }
 }

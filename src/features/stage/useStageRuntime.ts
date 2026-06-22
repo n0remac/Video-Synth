@@ -41,6 +41,7 @@ import { createScene } from "./render/createScene"
 import { ColorControlModule } from "./modules/colorControl"
 import { CenterShapeModule } from "./modules/centerShape"
 import { RipplePaintModule } from "./modules/ripplePaint"
+import { SpiralMotionModule } from "./modules/spiralMotion"
 import { TrailPaintModule } from "./modules/trailPaint"
 
 type ConnectionStatus = "connecting" | "connected" | "disconnected"
@@ -480,9 +481,10 @@ export function useStageRuntime() {
     const renderer = createRenderer(activeCanvas)
     const scene = createScene()
     scene.background = new THREE.Color(stageConfig.backgroundColor)
-    const camera = createCamera(stageConfig.worldWidth, stageConfig.worldHeight)
+    const camera = createCamera(stageConfig.worldHeight)
     const colorControl = new ColorControlModule()
-    const centerShape = new CenterShapeModule({ scene })
+    const spiralMotion = new SpiralMotionModule({ scene })
+    const centerShape = new CenterShapeModule({ scene, spiralMotion })
     const ripplePaint = new RipplePaintModule({
       scene,
       maxRipples: stageConfig.maxRipples,
@@ -522,6 +524,7 @@ export function useStageRuntime() {
           routeSignal.audioInstanceId,
           visualCvResult.state,
         )
+        spiralMotion.receiveVisualCvRouteSignal(visualCvSignal)
         centerShape.receiveVisualCvRouteSignal(visualCvSignal)
         ripplePaint.receiveAudioRouteSignal(routedRouteSignal)
 
@@ -653,6 +656,10 @@ export function useStageRuntime() {
             index === existingIndex ? nextRoute : route,
           )
         })
+        spiralMotion.receiveAudioSettings(
+          message.audioInstanceId,
+          message.settings,
+        )
         centerShape.receiveAudioSettings(message.audioInstanceId, message.settings)
         visualCvRouteStatesRef.current.delete(message.audioInstanceId)
       }
@@ -665,6 +672,7 @@ export function useStageRuntime() {
         )
         songRouteStatesRef.current.delete(message.audioInstanceId)
         visualCvRouteStatesRef.current.delete(message.audioInstanceId)
+        spiralMotion.removeAudioInstance(message.audioInstanceId)
         centerShape.removeAudioInstance(message.audioInstanceId)
       }
     })
@@ -726,6 +734,7 @@ export function useStageRuntime() {
     const loop = startAnimationLoop((dt) => {
       ripplePaint.update(dt)
       trailPaint.update(dt)
+      spiralMotion.update(dt)
       centerShape.update(dt)
       colorControl.update()
       scene.background = new THREE.Color(
@@ -749,6 +758,7 @@ export function useStageRuntime() {
       activeCanvas.removeEventListener("pointercancel", handlePointerUp)
       colorControl.dispose()
       centerShape.dispose()
+      spiralMotion.dispose()
       ripplePaint.dispose()
       trailPaint.dispose()
       renderer.dispose()

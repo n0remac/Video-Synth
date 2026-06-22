@@ -2,6 +2,28 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import { parseVisualizerMessage } from "./messageValidation.ts"
 
+const defaultShapeMotionMapping = {
+  enabled: false,
+  source: "rise-fall",
+  amount: 0,
+  invert: false,
+  mode: "oscillate",
+  resetMs: 2000,
+}
+
+const defaultSpiralMotionSettings = {
+  enabled: false,
+  visualize: true,
+  startRadius: 0.65,
+  radiusSource: "smooth",
+  radiusCvAmount: 0.25,
+  degreesPerPulse: 180,
+  depthPerPulse: 0.5,
+  resetMs: 4000,
+  direction: "clockwise",
+  startPhaseDegrees: 0,
+}
+
 const validAudioSettings = {
   sampleStartPercent: 0,
   sampleEndPercent: 20,
@@ -51,6 +73,7 @@ const validAudioSettings = {
     enabled: false,
     mode: "2d",
     family: "prism",
+    color: "#00d1ff",
     parameters: {
       angleBias: 0,
       bevel: 0.04,
@@ -61,27 +84,26 @@ const validAudioSettings = {
       taper: 1,
       twist: 0,
     },
-    rotation: 0,
+    position: { x: 0, y: 0, z: 0 },
+    rotation: { x: 0, y: 0, z: 0 },
+    positionMode: "manual",
+    spiralMotion: { ...defaultSpiralMotionSettings },
     motionMappings: {
-      angleBias: { enabled: false, source: "rise-fall", amount: 0, invert: false },
-      bevel: { enabled: false, source: "rise-fall", amount: 0, invert: false },
-      depth: { enabled: false, source: "rise-fall", amount: 0, invert: false },
-      sideVariation: {
-        enabled: false,
-        source: "rise-fall",
-        amount: 0,
-        invert: false,
-      },
-      sides: { enabled: false, source: "rise-fall", amount: 0, invert: false },
-      size: { enabled: false, source: "rise-fall", amount: 0, invert: false },
-      taper: { enabled: false, source: "rise-fall", amount: 0, invert: false },
-      twist: { enabled: false, source: "rise-fall", amount: 0, invert: false },
-      rotation: {
-        enabled: false,
-        source: "rise-fall",
-        amount: 0,
-        invert: false,
-      },
+      angleBias: { ...defaultShapeMotionMapping },
+      bevel: { ...defaultShapeMotionMapping },
+      depth: { ...defaultShapeMotionMapping },
+      sideVariation: { ...defaultShapeMotionMapping },
+      sides: { ...defaultShapeMotionMapping },
+      size: { ...defaultShapeMotionMapping },
+      taper: { ...defaultShapeMotionMapping },
+      twist: { ...defaultShapeMotionMapping },
+      positionX: { ...defaultShapeMotionMapping },
+      positionY: { ...defaultShapeMotionMapping },
+      positionZ: { ...defaultShapeMotionMapping },
+      rotationX: { ...defaultShapeMotionMapping },
+      rotationY: { ...defaultShapeMotionMapping },
+      rotationZ: { ...defaultShapeMotionMapping },
+      colorHue: { ...defaultShapeMotionMapping },
     },
   },
 }
@@ -98,6 +120,85 @@ test("parses audio settings snapshots with an audio instance id", () => {
 
   assert.equal(message?.type, "audio_settings_snapshot")
   assert.equal(message?.audioInstanceId, "bass_instance-1")
+})
+
+test("parses audio settings updates with long center shape reset timers", () => {
+  const settings = JSON.parse(JSON.stringify(validAudioSettings))
+  settings.centerShape.motionMappings.positionX.resetMs = 60 * 60 * 1000
+
+  const message = parseVisualizerMessage(
+    JSON.stringify({
+      type: "audio_settings_update",
+      userId: "user-1",
+      audioInstanceId: "bass_instance-1",
+      settings,
+      timestamp: 1000,
+    }),
+  )
+
+  assert.equal(message?.type, "audio_settings_update")
+  assert.equal(
+    message?.settings.centerShape.motionMappings.positionX.resetMs,
+    60 * 60 * 1000,
+  )
+})
+
+test("parses audio settings updates with center shape spiral motion", () => {
+  const settings = JSON.parse(JSON.stringify(validAudioSettings))
+  settings.centerShape.positionMode = "spiral"
+  settings.centerShape.spiralMotion = {
+    ...defaultSpiralMotionSettings,
+    enabled: true,
+    resetMs: 24 * 60 * 60 * 1000,
+    direction: "counterclockwise",
+  }
+
+  const message = parseVisualizerMessage(
+    JSON.stringify({
+      type: "audio_settings_update",
+      userId: "user-1",
+      audioInstanceId: "bass_instance-1",
+      settings,
+      timestamp: 1000,
+    }),
+  )
+
+  assert.equal(message?.type, "audio_settings_update")
+  assert.equal(message?.settings.centerShape.positionMode, "spiral")
+  assert.equal(
+    message?.settings.centerShape.spiralMotion.resetMs,
+    24 * 60 * 60 * 1000,
+  )
+})
+
+test("rejects audio settings updates with invalid center shape spiral settings", () => {
+  const negativeResetSettings = JSON.parse(JSON.stringify(validAudioSettings))
+  negativeResetSettings.centerShape.positionMode = "spiral"
+  negativeResetSettings.centerShape.spiralMotion.resetMs = -1
+
+  const invalidDirectionSettings = JSON.parse(JSON.stringify(validAudioSettings))
+  invalidDirectionSettings.centerShape.spiralMotion.direction = "sideways"
+
+  const invalidPositionModeSettings = JSON.parse(JSON.stringify(validAudioSettings))
+  invalidPositionModeSettings.centerShape.positionMode = "orbit"
+
+  for (const settings of [
+    negativeResetSettings,
+    invalidDirectionSettings,
+    invalidPositionModeSettings,
+  ]) {
+    const message = parseVisualizerMessage(
+      JSON.stringify({
+        type: "audio_settings_update",
+        userId: "user-1",
+        audioInstanceId: "bass_instance-1",
+        settings,
+        timestamp: 1000,
+      }),
+    )
+
+    assert.equal(message, null)
+  }
 })
 
 test("rejects audio settings updates with invalid audio instance ids", () => {

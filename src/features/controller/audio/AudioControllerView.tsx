@@ -1,6 +1,12 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
+import {
+  type CSSProperties,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react"
 import { useRouter } from "next/navigation"
 import {
   createAudioSettingsDeleteMessage,
@@ -17,11 +23,17 @@ import type {
   AudioControlledShapeSettings,
   ShapeControlName,
   ShapeFamily,
+  ShapeMotionMode,
   ShapeMotionSource,
+  ShapePositionMode,
+  ShapeSpiralMotionDirection,
+  ShapeSpiralMotionSettings,
+  ShapeVector3,
 } from "@/features/shapeGenerator/shapeGeneratorTypes"
 import {
   createDefaultAudioControlledShapeSettings,
   shapeFamilyOptions,
+  shapeControlNames,
 } from "@/features/shapeGenerator/shapeGeneratorTypes"
 import { getNearestPolyhedronSideCount } from "@/features/shapeGenerator/shapeGeneratorThree"
 import {
@@ -132,13 +144,58 @@ const shapeControlDefinitions: ShapeControlDefinition[] = [
     motionAmountStep: 0.05,
   },
   {
-    name: "rotation",
-    label: "Rotation",
-    min: 0,
-    max: 360,
+    name: "rotationX",
+    label: "Rotate X",
+    min: -180,
+    max: 180,
     step: 1,
     motionAmountMax: 180,
     motionAmountStep: 1,
+  },
+  {
+    name: "rotationY",
+    label: "Rotate Y",
+    min: -180,
+    max: 180,
+    step: 1,
+    motionAmountMax: 180,
+    motionAmountStep: 1,
+  },
+  {
+    name: "rotationZ",
+    label: "Rotate Z",
+    min: -180,
+    max: 180,
+    step: 1,
+    motionAmountMax: 180,
+    motionAmountStep: 1,
+  },
+  {
+    name: "positionX",
+    label: "Position X",
+    min: -1.5,
+    max: 1.5,
+    step: 0.01,
+    motionAmountMax: 1.5,
+    motionAmountStep: 0.01,
+  },
+  {
+    name: "positionY",
+    label: "Position Y",
+    min: -1,
+    max: 1,
+    step: 0.01,
+    motionAmountMax: 1,
+    motionAmountStep: 0.01,
+  },
+  {
+    name: "positionZ",
+    label: "Position Z",
+    min: -2,
+    max: 2,
+    step: 0.01,
+    motionAmountMax: 2,
+    motionAmountStep: 0.01,
   },
   {
     name: "angleBias",
@@ -194,6 +251,54 @@ const shapeControlDefinitions: ShapeControlDefinition[] = [
     motionAmountMax: 1,
     motionAmountStep: 0.05,
   },
+]
+
+const colorMotionDefinition = {
+  name: "colorHue" as const,
+  label: "Hue Amount",
+  motionAmountMax: 360,
+  motionAmountStep: 1,
+}
+
+const continuousShapeControlNames: ShapeControlName[] = [
+  "positionX",
+  "positionY",
+  "positionZ",
+  "rotationX",
+  "rotationY",
+  "rotationZ",
+]
+
+const positionShapeControlNames: ShapeControlName[] = [
+  "positionX",
+  "positionY",
+  "positionZ",
+]
+
+type ResetCycleName = ShapeControlName | "spiral"
+
+const shapeMotionModeOptions: Array<{
+  value: ShapeMotionMode
+  label: string
+}> = [
+  { value: "oscillate", label: "Oscillate" },
+  { value: "continuous", label: "Continuous" },
+]
+
+const shapePositionModeOptions: Array<{
+  value: ShapePositionMode
+  label: string
+}> = [
+  { value: "manual", label: "Manual" },
+  { value: "spiral", label: "Spiral" },
+]
+
+const shapeSpiralDirectionOptions: Array<{
+  value: ShapeSpiralMotionDirection
+  label: string
+}> = [
+  { value: "clockwise", label: "Clockwise" },
+  { value: "counterclockwise", label: "Counter" },
 ]
 
 const triggeredCircleTriggerSourceOptions: Array<{
@@ -713,13 +818,161 @@ function createLevelMotionHistorySample(
   }
 }
 
+function isRecordValue(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
+function getShapeVector3Value(
+  value: unknown,
+  fallback: ShapeVector3,
+): ShapeVector3 {
+  if (!isRecordValue(value)) {
+    return fallback
+  }
+
+  return {
+    x: typeof value.x === "number" && Number.isFinite(value.x) ? value.x : fallback.x,
+    y: typeof value.y === "number" && Number.isFinite(value.y) ? value.y : fallback.y,
+    z: typeof value.z === "number" && Number.isFinite(value.z) ? value.z : fallback.z,
+  }
+}
+
+function isVisualCvModulationSourceValue(
+  value: unknown,
+): value is VisualCvModulationSource {
+  return visualCvModulationSourceOptions.some((option) => option.value === value)
+}
+
+function normalizeSpiralMotionSettings(
+  value: unknown,
+  fallback: ShapeSpiralMotionSettings,
+): ShapeSpiralMotionSettings {
+  if (!isRecordValue(value)) {
+    return fallback
+  }
+
+  return {
+    enabled:
+      typeof value.enabled === "boolean" ? value.enabled : fallback.enabled,
+    visualize:
+      typeof value.visualize === "boolean"
+        ? value.visualize
+        : fallback.visualize,
+    startRadius:
+      typeof value.startRadius === "number" && Number.isFinite(value.startRadius)
+        ? Math.max(value.startRadius, 0)
+        : fallback.startRadius,
+    radiusSource: isVisualCvModulationSourceValue(value.radiusSource)
+      ? value.radiusSource
+      : fallback.radiusSource,
+    radiusCvAmount:
+      typeof value.radiusCvAmount === "number" &&
+      Number.isFinite(value.radiusCvAmount)
+        ? Math.max(value.radiusCvAmount, 0)
+        : fallback.radiusCvAmount,
+    degreesPerPulse:
+      typeof value.degreesPerPulse === "number" &&
+      Number.isFinite(value.degreesPerPulse)
+        ? Math.max(value.degreesPerPulse, 0)
+        : fallback.degreesPerPulse,
+    depthPerPulse:
+      typeof value.depthPerPulse === "number" &&
+      Number.isFinite(value.depthPerPulse)
+        ? Math.max(value.depthPerPulse, 0)
+        : fallback.depthPerPulse,
+    resetMs:
+      typeof value.resetMs === "number" && Number.isFinite(value.resetMs)
+        ? Math.max(value.resetMs, 250)
+        : fallback.resetMs,
+    direction:
+      value.direction === "clockwise" || value.direction === "counterclockwise"
+        ? value.direction
+        : fallback.direction,
+    startPhaseDegrees:
+      typeof value.startPhaseDegrees === "number" &&
+      Number.isFinite(value.startPhaseDegrees)
+        ? value.startPhaseDegrees
+        : fallback.startPhaseDegrees,
+  }
+}
+
+function normalizeCenterShapeSettings(
+  value: AudioControlledShapeSettings | null | undefined,
+): AudioControlledShapeSettings {
+  const defaults = createDefaultAudioControlledShapeSettings()
+
+  if (!value) {
+    return defaults
+  }
+
+  const rawValue = value as Partial<AudioControlledShapeSettings> & {
+    rotation?: unknown
+    position?: unknown
+    positionMode?: unknown
+    spiralMotion?: unknown
+  }
+  const legacyRotation =
+    typeof rawValue.rotation === "number" && Number.isFinite(rawValue.rotation)
+      ? rawValue.rotation
+      : null
+  const rotation =
+    legacyRotation === null
+      ? getShapeVector3Value(rawValue.rotation, defaults.rotation)
+      : {
+          ...defaults.rotation,
+          [rawValue.mode === "3d" ? "y" : "z"]: legacyRotation,
+        }
+  const motionMappings = shapeControlNames.reduce((mappings, controlName) => {
+    mappings[controlName] = {
+      ...defaults.motionMappings[controlName],
+      ...value.motionMappings?.[controlName],
+    }
+
+    return mappings
+  }, {} as AudioControlledShapeSettings["motionMappings"])
+
+  return {
+    ...defaults,
+    ...value,
+    color: typeof value.color === "string" ? value.color : defaults.color,
+    parameters: {
+      ...defaults.parameters,
+      ...value.parameters,
+    },
+    position: getShapeVector3Value(rawValue.position, defaults.position),
+    positionMode:
+      rawValue.positionMode === "spiral" ? "spiral" : defaults.positionMode,
+    rotation,
+    spiralMotion: normalizeSpiralMotionSettings(
+      rawValue.spiralMotion,
+      defaults.spiralMotion,
+    ),
+    motionMappings,
+  }
+}
+
 function getShapeControlValue(
   shape: AudioControlledShapeSettings,
   controlName: ShapeControlName,
 ) {
-  return controlName === "rotation"
-    ? shape.rotation
-    : shape.parameters[controlName]
+  switch (controlName) {
+    case "colorHue":
+      return 0
+    case "positionX":
+      return shape.position.x
+    case "positionY":
+      return shape.position.y
+    case "positionZ":
+      return shape.position.z
+    case "rotationX":
+      return shape.rotation.x
+    case "rotationY":
+      return shape.rotation.y
+    case "rotationZ":
+      return shape.rotation.z
+    default:
+      return shape.parameters[controlName]
+  }
 }
 
 function formatShapeControlValue(value: number, step: number) {
@@ -728,6 +981,36 @@ function formatShapeControlValue(value: number, step: number) {
   }
 
   return String(Number(value.toFixed(2)))
+}
+
+function formatMilliseconds(value: number) {
+  return `${Number((value / 1000).toFixed(2))}s`
+}
+
+function formatResetSecondsInput(value: number) {
+  return Number((value / 1000).toFixed(3))
+}
+
+function getResetProgress({
+  now,
+  resetMs,
+  startedAt,
+}: {
+  now: number
+  resetMs: number
+  startedAt: number
+}) {
+  const duration = Math.max(resetMs, 1)
+
+  return ((Math.max(now - startedAt, 0) % duration) / duration)
+}
+
+function supportsContinuousShapeMotion(controlName: ShapeControlName) {
+  return continuousShapeControlNames.includes(controlName)
+}
+
+function isPositionShapeControl(controlName: ShapeControlName) {
+  return positionShapeControlNames.includes(controlName)
 }
 
 function formatAudioFrameSource(frame: AudioAnalysisFrame | null) {
@@ -755,6 +1038,9 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
   const levelMotionHistoryRef = useRef<AudioLevelMotionHistorySample[]>([])
   const visualCvPreviewRef = useRef<VisualCvPreviewPanelHandle | null>(null)
   const lastControllerStateUpdateAtRef = useRef(0)
+  const resetCycleStartsRef = useRef<Partial<Record<ResetCycleName, number>>>(
+    {},
+  )
   const [settings, setSettings] =
     useState<AudioCircleSettings>(defaultAudioSettings)
   const [adaptiveTriggerState, setAdaptiveTriggerState] =
@@ -765,6 +1051,7 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
   const [sampleValue, setSampleValue] = useState(0)
   const [pendingDeletedAudioInstanceId, setPendingDeletedAudioInstanceId] =
     useState<string | null>(null)
+  const [resetProgressNow, setResetProgressNow] = useState(() => Date.now())
   const displayedTriggerLevel =
     settings.triggerMode === "adaptive" && adaptiveTriggerState
       ? adaptiveTriggerState.triggerLevel
@@ -886,9 +1173,9 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
           socket.audioSettings.triggeredCircles ??
           defaultAudioSettings.triggeredCircles,
         visualCv: socket.audioSettings.visualCv ?? defaultAudioSettings.visualCv,
-        centerShape:
-          socket.audioSettings.centerShape ??
-          createDefaultAudioControlledShapeSettings(),
+        centerShape: normalizeCenterShapeSettings(
+          socket.audioSettings.centerShape,
+        ),
       })
     }
   }, [socket.audioSettings])
@@ -949,6 +1236,52 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
     settings.gain,
     settings.sampleEndPercent,
     settings.sampleStartPercent,
+  ])
+
+  useEffect(() => {
+    const now = Date.now()
+    const activePositionControls = positionShapeControlNames.filter(
+      (controlName) => {
+        const mapping = settings.centerShape.motionMappings[controlName]
+
+        return mapping.enabled && mapping.mode === "continuous"
+      },
+    )
+    const activeResetControls: ResetCycleName[] = [...activePositionControls]
+
+    if (
+      settings.centerShape.positionMode === "spiral" &&
+      settings.centerShape.spiralMotion.enabled
+    ) {
+      activeResetControls.push("spiral")
+    }
+
+    activeResetControls.forEach((controlName) => {
+      resetCycleStartsRef.current[controlName] ??= now
+    })
+
+    Object.keys(resetCycleStartsRef.current).forEach((controlName) => {
+      if (!activeResetControls.includes(controlName as ResetCycleName)) {
+        delete resetCycleStartsRef.current[controlName as ResetCycleName]
+      }
+    })
+
+    if (activeResetControls.length === 0) {
+      return
+    }
+
+    setResetProgressNow(now)
+
+    const interval = window.setInterval(() => {
+      setResetProgressNow(Date.now())
+    }, 100)
+
+    return () => window.clearInterval(interval)
+  }, [
+    settings.centerShape.motionMappings,
+    settings.centerShape.positionMode,
+    settings.centerShape.spiralMotion.enabled,
+    settings.centerShape.spiralMotion.resetMs,
   ])
 
   function updateSettings(patch: Partial<AudioCircleSettings>) {
@@ -1017,8 +1350,49 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
     controlName: ShapeControlName,
     value: number,
   ) {
-    if (controlName === "rotation") {
-      updateCenterShape({ rotation: value })
+    if (controlName === "rotationX") {
+      updateCenterShape({
+        rotation: { ...settings.centerShape.rotation, x: value },
+      })
+      return
+    }
+
+    if (controlName === "rotationY") {
+      updateCenterShape({
+        rotation: { ...settings.centerShape.rotation, y: value },
+      })
+      return
+    }
+
+    if (controlName === "rotationZ") {
+      updateCenterShape({
+        rotation: { ...settings.centerShape.rotation, z: value },
+      })
+      return
+    }
+
+    if (controlName === "positionX") {
+      updateCenterShape({
+        position: { ...settings.centerShape.position, x: value },
+      })
+      return
+    }
+
+    if (controlName === "positionY") {
+      updateCenterShape({
+        position: { ...settings.centerShape.position, y: value },
+      })
+      return
+    }
+
+    if (controlName === "positionZ") {
+      updateCenterShape({
+        position: { ...settings.centerShape.position, z: value },
+      })
+      return
+    }
+
+    if (controlName === "colorHue") {
       return
     }
 
@@ -1041,6 +1415,17 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
           ...settings.centerShape.motionMappings[controlName],
           ...patch,
         },
+      },
+    })
+  }
+
+  function updateCenterShapeSpiralMotion(
+    patch: Partial<ShapeSpiralMotionSettings>,
+  ) {
+    updateCenterShape({
+      spiralMotion: {
+        ...settings.centerShape.spiralMotion,
+        ...patch,
       },
     })
   }
@@ -1105,6 +1490,14 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
 
   const centerShape = settings.centerShape
   const visibleShapeControls = getVisibleShapeControls()
+  const colorMotionMapping = centerShape.motionMappings[colorMotionDefinition.name]
+  const spiralResetStartedAt =
+    resetCycleStartsRef.current.spiral ?? resetProgressNow
+  const spiralResetProgress = getResetProgress({
+    now: resetProgressNow,
+    resetMs: centerShape.spiralMotion.resetMs,
+    startedAt: spiralResetStartedAt,
+  })
 
   return (
     <main className="controller-shell audio-controller-shell">
@@ -1489,7 +1882,307 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
               </select>
             </label>
           ) : null}
+
+          <div className="control-field">
+            <span>
+              Position Mode
+              <strong>
+                {centerShape.positionMode === "spiral" ? "Spiral" : "Manual"}
+              </strong>
+            </span>
+            <div
+              className="mode-toggle"
+              role="group"
+              aria-label="Center shape position mode"
+            >
+              {shapePositionModeOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  data-active={centerShape.positionMode === option.value}
+                  aria-pressed={centerShape.positionMode === option.value}
+                  onClick={() => {
+                    updateCenterShape(
+                      option.value === "spiral"
+                        ? {
+                            positionMode: option.value,
+                            spiralMotion: {
+                              ...centerShape.spiralMotion,
+                              enabled: true,
+                            },
+                          }
+                        : { positionMode: option.value },
+                    )
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
+
+        <div className="audio-shape-appearance-controls">
+          <ColorPicker
+            color={centerShape.color}
+            onColorChange={(color) => updateCenterShape({ color })}
+          />
+
+          <div className="audio-shape-control">
+            <label className="audio-shape-motion-toggle">
+              <input
+                type="checkbox"
+                checked={colorMotionMapping.enabled}
+                onChange={(event) =>
+                  updateShapeMotionMapping(colorMotionDefinition.name, {
+                    enabled: event.currentTarget.checked,
+                  })
+                }
+              />
+              <span>Use CV Color</span>
+            </label>
+
+            {colorMotionMapping.enabled ? (
+              <div className="audio-shape-motion-controls">
+                <label className="control-field">
+                  <span>Source</span>
+                  <select
+                    value={colorMotionMapping.source}
+                    onChange={(event) =>
+                      updateShapeMotionMapping(colorMotionDefinition.name, {
+                        source: event.target.value as ShapeMotionSource,
+                      })
+                    }
+                  >
+                    {shapeMotionSourceOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="control-field">
+                  <span>
+                    {colorMotionDefinition.label}
+                    <strong>
+                      {formatShapeControlValue(
+                        colorMotionMapping.amount,
+                        colorMotionDefinition.motionAmountStep,
+                      )}
+                    </strong>
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={colorMotionDefinition.motionAmountMax}
+                    step={colorMotionDefinition.motionAmountStep}
+                    value={colorMotionMapping.amount}
+                    onChange={(event) =>
+                      updateShapeMotionMapping(colorMotionDefinition.name, {
+                        amount: Number(event.target.value),
+                      })
+                    }
+                  />
+                </label>
+                <label className="audio-shape-motion-toggle">
+                  <input
+                    type="checkbox"
+                    checked={colorMotionMapping.invert}
+                    onChange={(event) =>
+                      updateShapeMotionMapping(colorMotionDefinition.name, {
+                        invert: event.currentTarget.checked,
+                      })
+                    }
+                  />
+                  <span>Invert</span>
+                </label>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        {centerShape.positionMode === "spiral" ? (
+          <div
+            className="audio-shape-spiral-controls"
+            aria-label="Spiral motion controls"
+          >
+            <div className="audio-shape-control">
+              <label className="audio-shape-motion-toggle">
+                <input
+                  type="checkbox"
+                  checked={centerShape.spiralMotion.enabled}
+                  onChange={(event) =>
+                    updateCenterShapeSpiralMotion({
+                      enabled: event.currentTarget.checked,
+                    })
+                  }
+                />
+                <span>Run Spiral</span>
+              </label>
+              <label className="audio-shape-motion-toggle">
+                <input
+                  type="checkbox"
+                  checked={centerShape.spiralMotion.visualize}
+                  onChange={(event) =>
+                    updateCenterShapeSpiralMotion({
+                      visualize: event.currentTarget.checked,
+                    })
+                  }
+                />
+                <span>Show Path</span>
+              </label>
+            </div>
+
+            <div className="audio-shape-control">
+              <ControlSlider
+                label="Start Radius"
+                value={centerShape.spiralMotion.startRadius}
+                min={0}
+                max={4}
+                step={0.01}
+                onValueChange={(startRadius) =>
+                  updateCenterShapeSpiralMotion({ startRadius })
+                }
+              />
+            </div>
+
+            <div className="audio-shape-control">
+              <label className="control-field">
+                <span>Radius Source</span>
+                <select
+                  value={centerShape.spiralMotion.radiusSource}
+                  onChange={(event) =>
+                    updateCenterShapeSpiralMotion({
+                      radiusSource: event.target.value as VisualCvModulationSource,
+                    })
+                  }
+                >
+                  {visualCvModulationSourceOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="audio-shape-control">
+              <ControlSlider
+                label="Radius CV Amount"
+                value={centerShape.spiralMotion.radiusCvAmount}
+                min={0}
+                max={2}
+                step={0.01}
+                onValueChange={(radiusCvAmount) =>
+                  updateCenterShapeSpiralMotion({ radiusCvAmount })
+                }
+              />
+            </div>
+
+            <div className="audio-shape-control">
+              <ControlSlider
+                label="Degrees Per Pulse"
+                value={centerShape.spiralMotion.degreesPerPulse}
+                min={0}
+                max={1080}
+                step={1}
+                onValueChange={(degreesPerPulse) =>
+                  updateCenterShapeSpiralMotion({ degreesPerPulse })
+                }
+              />
+            </div>
+
+            <div className="audio-shape-control">
+              <ControlSlider
+                label="Depth Per Pulse"
+                value={centerShape.spiralMotion.depthPerPulse}
+                min={0}
+                max={5}
+                step={0.01}
+                onValueChange={(depthPerPulse) =>
+                  updateCenterShapeSpiralMotion({ depthPerPulse })
+                }
+              />
+            </div>
+
+            <div className="audio-shape-control">
+              <label className="control-field">
+                <span>
+                  Reset Seconds
+                  <strong>
+                    {formatMilliseconds(centerShape.spiralMotion.resetMs)}
+                  </strong>
+                </span>
+                <div className="audio-shape-reset-row">
+                  <input
+                    type="number"
+                    min={0.25}
+                    step={0.25}
+                    value={formatResetSecondsInput(
+                      centerShape.spiralMotion.resetMs,
+                    )}
+                    onChange={(event) => {
+                      const nextSeconds = Number(event.target.value)
+
+                      if (!Number.isFinite(nextSeconds)) {
+                        return
+                      }
+
+                      updateCenterShapeSpiralMotion({
+                        resetMs: Math.max(nextSeconds * 1000, 250),
+                      })
+                    }}
+                  />
+                  <span className="audio-shape-reset-unit">sec</span>
+                  <span
+                    className="audio-shape-reset-spinner"
+                    aria-label={`Spiral reset timer ${Math.round(spiralResetProgress * 100)}%`}
+                    style={
+                      {
+                        "--reset-progress": `${spiralResetProgress * 360}deg`,
+                      } as CSSProperties
+                    }
+                    title={`Spiral reset timer ${Math.round(spiralResetProgress * 100)}%`}
+                  />
+                </div>
+              </label>
+            </div>
+
+            <div className="audio-shape-control">
+              <label className="control-field">
+                <span>Direction</span>
+                <select
+                  value={centerShape.spiralMotion.direction}
+                  onChange={(event) =>
+                    updateCenterShapeSpiralMotion({
+                      direction:
+                        event.target.value as ShapeSpiralMotionDirection,
+                    })
+                  }
+                >
+                  {shapeSpiralDirectionOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="audio-shape-control">
+              <ControlSlider
+                label="Start Phase"
+                value={centerShape.spiralMotion.startPhaseDegrees}
+                min={-360}
+                max={360}
+                step={1}
+                onValueChange={(startPhaseDegrees) =>
+                  updateCenterShapeSpiralMotion({ startPhaseDegrees })
+                }
+              />
+            </div>
+          </div>
+        ) : null}
 
         <div className="audio-shape-control-grid">
           {visibleShapeControls.map((definition) => {
@@ -1502,6 +2195,20 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
             const value = isPolyhedronSides
               ? getNearestPolyhedronSideCount(rawValue)
               : rawValue
+            const supportsContinuousMotion =
+              supportsContinuousShapeMotion(definition.name)
+            const continuousMode =
+              supportsContinuousMotion && mapping.mode === "continuous"
+            const resetStartedAt =
+              resetCycleStartsRef.current[definition.name] ?? resetProgressNow
+            const resetProgress = getResetProgress({
+              now: resetProgressNow,
+              resetMs: mapping.resetMs,
+              startedAt: resetStartedAt,
+            })
+            const hidePositionCvMotion =
+              centerShape.positionMode === "spiral" &&
+              isPositionShapeControl(definition.name)
 
             return (
               <div className="audio-shape-control" key={definition.name}>
@@ -1531,41 +2238,64 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
                   />
                 </label>
 
-                <label className="audio-shape-motion-toggle">
-                  <input
-                    type="checkbox"
-                    checked={mapping.enabled}
-                    onChange={(event) =>
-                      updateShapeMotionMapping(definition.name, {
-                        enabled: event.currentTarget.checked,
-                      })
-                    }
-                  />
-                  <span>Use CV Motion</span>
-                </label>
+                {!hidePositionCvMotion ? (
+                  <label className="audio-shape-motion-toggle">
+                    <input
+                      type="checkbox"
+                      checked={mapping.enabled}
+                      onChange={(event) =>
+                        updateShapeMotionMapping(definition.name, {
+                          enabled: event.currentTarget.checked,
+                        })
+                      }
+                    />
+                    <span>Use CV Motion</span>
+                  </label>
+                ) : null}
 
-                {mapping.enabled ? (
+                {!hidePositionCvMotion && mapping.enabled ? (
                   <div className="audio-shape-motion-controls">
-                    <label className="control-field">
-                      <span>Source</span>
-                      <select
-                        value={mapping.source}
-                        onChange={(event) =>
-                          updateShapeMotionMapping(definition.name, {
-                            source: event.target.value as ShapeMotionSource,
-                          })
-                        }
-                      >
-                        {shapeMotionSourceOptions.map((option) => (
-                          <option key={option.value} value={option.value}>
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    {supportsContinuousMotion ? (
+                      <label className="control-field">
+                        <span>Mode</span>
+                        <select
+                          value={mapping.mode}
+                          onChange={(event) =>
+                            updateShapeMotionMapping(definition.name, {
+                              mode: event.target.value as ShapeMotionMode,
+                            })
+                          }
+                        >
+                          {shapeMotionModeOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
+                    {!continuousMode ? (
+                      <label className="control-field">
+                        <span>Source</span>
+                        <select
+                          value={mapping.source}
+                          onChange={(event) =>
+                            updateShapeMotionMapping(definition.name, {
+                              source: event.target.value as ShapeMotionSource,
+                            })
+                          }
+                        >
+                          {shapeMotionSourceOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
                     <label className="control-field">
                       <span>
-                        Amount
+                        {continuousMode ? "Per Cycle" : "Amount"}
                         <strong>
                           {formatShapeControlValue(
                             mapping.amount,
@@ -1586,6 +2316,44 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
                         }
                       />
                     </label>
+                    {continuousMode && isPositionShapeControl(definition.name) ? (
+                      <label className="control-field">
+                        <span>
+                          Reset
+                          <strong>{formatMilliseconds(mapping.resetMs)}</strong>
+                        </span>
+                        <div className="audio-shape-reset-row">
+                          <input
+                            type="number"
+                            min={0.25}
+                            step={0.25}
+                            value={formatResetSecondsInput(mapping.resetMs)}
+                            onChange={(event) => {
+                              const nextSeconds = Number(event.target.value)
+
+                              if (!Number.isFinite(nextSeconds)) {
+                                return
+                              }
+
+                              updateShapeMotionMapping(definition.name, {
+                                resetMs: Math.max(nextSeconds * 1000, 250),
+                              })
+                            }}
+                          />
+                          <span className="audio-shape-reset-unit">sec</span>
+                          <span
+                            className="audio-shape-reset-spinner"
+                            aria-label={`Reset timer ${Math.round(resetProgress * 100)}%`}
+                            style={
+                              {
+                                "--reset-progress": `${resetProgress * 360}deg`,
+                              } as CSSProperties
+                            }
+                            title={`Reset timer ${Math.round(resetProgress * 100)}%`}
+                          />
+                        </div>
+                      </label>
+                    ) : null}
                     <label className="audio-shape-motion-toggle">
                       <input
                         type="checkbox"

@@ -33,18 +33,45 @@ const shapeParameterNames = [
   "taper",
   "twist",
 ]
-const shapeControlNames = [...shapeParameterNames, "rotation"]
+const shapeTransformControlNames = [
+  "positionX",
+  "positionY",
+  "positionZ",
+  "rotationX",
+  "rotationY",
+  "rotationZ",
+  "colorHue",
+]
+const centerShapeControlNames = [
+  ...shapeParameterNames,
+  ...shapeTransformControlNames,
+]
 
 const defaultShapeMotionMapping = {
   enabled: false,
   source: "rise-fall",
   amount: 0,
   invert: false,
+  mode: "oscillate",
+  resetMs: 2000,
+}
+
+const defaultShapeSpiralMotionSettings = {
+  enabled: false,
+  visualize: true,
+  startRadius: 0.65,
+  radiusSource: "smooth",
+  radiusCvAmount: 0.25,
+  degreesPerPulse: 180,
+  depthPerPulse: 0.5,
+  resetMs: 4000,
+  direction: "clockwise",
+  startPhaseDegrees: 0,
 }
 
 function createDefaultShapeMotionMappings() {
   return Object.fromEntries(
-    shapeControlNames.map((parameterName) => [
+    centerShapeControlNames.map((parameterName) => [
       parameterName,
       { ...defaultShapeMotionMapping },
     ]),
@@ -56,6 +83,7 @@ function createDefaultCenterShapeSettings() {
     enabled: false,
     mode: "2d",
     family: "prism",
+    color: "#00d1ff",
     parameters: {
       angleBias: 0,
       bevel: 0.04,
@@ -66,7 +94,10 @@ function createDefaultCenterShapeSettings() {
       taper: 1,
       twist: 0,
     },
-    rotation: 0,
+    position: { x: 0, y: 0, z: 0 },
+    rotation: { x: 0, y: 0, z: 0 },
+    positionMode: "manual",
+    spiralMotion: { ...defaultShapeSpiralMotionSettings },
     motionMappings: createDefaultShapeMotionMappings(),
   }
 }
@@ -189,6 +220,25 @@ function isShapeFamily(value) {
   )
 }
 
+function isHexColor(value) {
+  return typeof value === "string" && /^#[0-9A-Fa-f]{6}$/.test(value)
+}
+
+function isShapeVector3(value, ranges) {
+  return (
+    value &&
+    isFiniteNumber(value.x) &&
+    isFiniteNumber(value.y) &&
+    isFiniteNumber(value.z) &&
+    value.x >= ranges.x.min &&
+    value.x <= ranges.x.max &&
+    value.y >= ranges.y.min &&
+    value.y <= ranges.y.max &&
+    value.z >= ranges.z.min &&
+    value.z <= ranges.z.max
+  )
+}
+
 function isShapeParameters(value) {
   return (
     value &&
@@ -231,17 +281,55 @@ function isShapeMotionMapping(value) {
       value.source === "syncSine") &&
     isFiniteNumber(value.amount) &&
     typeof value.invert === "boolean" &&
+    (value.mode === "oscillate" || value.mode === "continuous") &&
+    isFiniteNumber(value.resetMs) &&
     value.amount >= 0 &&
-    value.amount <= 360
+    value.amount <= 360 &&
+    value.resetMs >= 250
   )
 }
 
 function isShapeMotionMappings(value) {
   return (
     value &&
-    shapeControlNames.every((parameterName) =>
+    centerShapeControlNames.every((parameterName) =>
       isShapeMotionMapping(value[parameterName]),
     )
+  )
+}
+
+function isShapePositionMode(value) {
+  return value === "manual" || value === "spiral"
+}
+
+function isShapeSpiralMotionDirection(value) {
+  return value === "clockwise" || value === "counterclockwise"
+}
+
+function isShapeSpiralMotionSettings(value) {
+  return (
+    value &&
+    typeof value.enabled === "boolean" &&
+    typeof value.visualize === "boolean" &&
+    isFiniteNumber(value.startRadius) &&
+    value.startRadius >= 0 &&
+    value.startRadius <= 20 &&
+    isVisualCvModulationSource(value.radiusSource) &&
+    isFiniteNumber(value.radiusCvAmount) &&
+    value.radiusCvAmount >= 0 &&
+    value.radiusCvAmount <= 20 &&
+    isFiniteNumber(value.degreesPerPulse) &&
+    value.degreesPerPulse >= 0 &&
+    value.degreesPerPulse <= 3600 &&
+    isFiniteNumber(value.depthPerPulse) &&
+    value.depthPerPulse >= 0 &&
+    value.depthPerPulse <= 100 &&
+    isFiniteNumber(value.resetMs) &&
+    value.resetMs >= 250 &&
+    isShapeSpiralMotionDirection(value.direction) &&
+    isFiniteNumber(value.startPhaseDegrees) &&
+    value.startPhaseDegrees >= -3600 &&
+    value.startPhaseDegrees <= 3600
   )
 }
 
@@ -251,10 +339,20 @@ function isAudioControlledShapeSettings(value) {
     typeof value.enabled === "boolean" &&
     (value.mode === "2d" || value.mode === "3d") &&
     isShapeFamily(value.family) &&
+    isHexColor(value.color) &&
     isShapeParameters(value.parameters) &&
-    isFiniteNumber(value.rotation) &&
-    value.rotation >= 0 &&
-    value.rotation <= 360 &&
+    isShapeVector3(value.position, {
+      x: { min: -1.5, max: 1.5 },
+      y: { min: -1, max: 1 },
+      z: { min: -2, max: 2 },
+    }) &&
+    isShapeVector3(value.rotation, {
+      x: { min: -180, max: 180 },
+      y: { min: -180, max: 180 },
+      z: { min: -180, max: 180 },
+    }) &&
+    isShapePositionMode(value.positionMode) &&
+    isShapeSpiralMotionSettings(value.spiralMotion) &&
     isShapeMotionMappings(value.motionMappings)
   )
 }

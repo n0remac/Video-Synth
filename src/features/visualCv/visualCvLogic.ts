@@ -420,6 +420,8 @@ export function updateVisualCvRouteSignal({
       smooth: smooth.output,
       envelope: envelope.output,
       syncSine: syncSine.output,
+      frequencyHz:
+        syncSine.cycleMs === null ? 0 : clamp(1000 / syncSine.cycleMs, 0, 20),
       rangeTriggered: routeSignal.triggered,
       envelopeTriggered: envelope.triggered,
       syncSineTriggered: syncSine.triggered,

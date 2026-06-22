@@ -5,6 +5,28 @@ import {
   getVisualizerSocketUrl,
 } from "./protocol.ts"
 
+const defaultShapeMotionMapping = {
+  enabled: false,
+  source: "rise-fall",
+  amount: 0,
+  invert: false,
+  mode: "oscillate",
+  resetMs: 2000,
+}
+
+const defaultSpiralMotionSettings = {
+  enabled: false,
+  visualize: true,
+  startRadius: 0.65,
+  radiusSource: "smooth",
+  radiusCvAmount: 0.25,
+  degreesPerPulse: 180,
+  depthPerPulse: 0.5,
+  resetMs: 4000,
+  direction: "clockwise",
+  startPhaseDegrees: 0,
+}
+
 const validAudioSettings = {
   sampleStartPercent: 0,
   sampleEndPercent: 20,
@@ -54,6 +76,7 @@ const validAudioSettings = {
     enabled: false,
     mode: "2d",
     family: "prism",
+    color: "#00d1ff",
     parameters: {
       angleBias: 0,
       bevel: 0.04,
@@ -64,27 +87,26 @@ const validAudioSettings = {
       taper: 1,
       twist: 0,
     },
-    rotation: 0,
+    position: { x: 0, y: 0, z: 0 },
+    rotation: { x: 0, y: 0, z: 0 },
+    positionMode: "manual",
+    spiralMotion: { ...defaultSpiralMotionSettings },
     motionMappings: {
-      angleBias: { enabled: false, source: "rise-fall", amount: 0, invert: false },
-      bevel: { enabled: false, source: "rise-fall", amount: 0, invert: false },
-      depth: { enabled: false, source: "rise-fall", amount: 0, invert: false },
-      sideVariation: {
-        enabled: false,
-        source: "rise-fall",
-        amount: 0,
-        invert: false,
-      },
-      sides: { enabled: false, source: "rise-fall", amount: 0, invert: false },
-      size: { enabled: false, source: "rise-fall", amount: 0, invert: false },
-      taper: { enabled: false, source: "rise-fall", amount: 0, invert: false },
-      twist: { enabled: false, source: "rise-fall", amount: 0, invert: false },
-      rotation: {
-        enabled: false,
-        source: "rise-fall",
-        amount: 0,
-        invert: false,
-      },
+      angleBias: { ...defaultShapeMotionMapping },
+      bevel: { ...defaultShapeMotionMapping },
+      depth: { ...defaultShapeMotionMapping },
+      sideVariation: { ...defaultShapeMotionMapping },
+      sides: { ...defaultShapeMotionMapping },
+      size: { ...defaultShapeMotionMapping },
+      taper: { ...defaultShapeMotionMapping },
+      twist: { ...defaultShapeMotionMapping },
+      positionX: { ...defaultShapeMotionMapping },
+      positionY: { ...defaultShapeMotionMapping },
+      positionZ: { ...defaultShapeMotionMapping },
+      rotationX: { ...defaultShapeMotionMapping },
+      rotationY: { ...defaultShapeMotionMapping },
+      rotationZ: { ...defaultShapeMotionMapping },
+      colorHue: { ...defaultShapeMotionMapping },
     },
   },
 }

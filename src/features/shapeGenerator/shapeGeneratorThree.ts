@@ -3,6 +3,7 @@ import type {
   ShapeFamily,
   ShapeMode,
   ShapeParameters,
+  ShapeVector3,
 } from "./shapeGeneratorTypes"
 
 export const polyhedronSideCounts = [4, 6, 8, 12, 20]
@@ -14,6 +15,14 @@ type DisposableObject = THREE.Object3D & {
 
 function toRadians(degrees: number): number {
   return (degrees / 180) * Math.PI
+}
+
+function rotationToRadians(rotation: ShapeVector3) {
+  return {
+    x: toRadians(rotation.x),
+    y: toRadians(rotation.y),
+    z: toRadians(rotation.z),
+  }
 }
 
 export function clamp(value: number, min: number, max: number): number {
@@ -133,7 +142,7 @@ function createSolidShape(
     color = 0x3cff9e,
     edgeStyle = "edges",
   }: {
-    color?: number
+    color?: THREE.ColorRepresentation
     edgeStyle?: "edges" | "wire"
   } = {},
 ): THREE.Object3D {
@@ -165,11 +174,18 @@ function createSolidShape(
 }
 
 function create2DShape({
-  angleBias,
-  sideVariation,
-  sides,
-  size,
-}: ShapeParameters): THREE.Object3D {
+  parameters,
+  color = 0x00d1ff,
+}: {
+  parameters: ShapeParameters
+  color?: THREE.ColorRepresentation
+}): THREE.Object3D {
+  const {
+    angleBias,
+    sideVariation,
+    sides,
+    size,
+  } = parameters
   const group = new THREE.Group()
   const polygonPoints = createPolygonPoints({
     angleBias,
@@ -182,7 +198,7 @@ function create2DShape({
   const fill = new THREE.Mesh(
     fillGeometry,
     new THREE.MeshBasicMaterial({
-      color: 0x00d1ff,
+      color,
       side: THREE.DoubleSide,
     }),
   )
@@ -311,15 +327,22 @@ function applySphericalVariation(
 }
 
 function createPrismShape({
-  angleBias,
-  bevel,
-  depth,
-  sideVariation,
-  sides,
-  size,
-  taper,
-  twist,
-}: ShapeParameters): THREE.Object3D {
+  parameters,
+  color,
+}: {
+  parameters: ShapeParameters
+  color?: THREE.ColorRepresentation
+}): THREE.Object3D {
+  const {
+    angleBias,
+    bevel,
+    depth,
+    sideVariation,
+    sides,
+    size,
+    taper,
+    twist,
+  } = parameters
   const effectiveDepth = Math.max(depth, 0.05)
   const bevelAmount = Math.min(size * bevel, effectiveDepth * 0.35)
   const polygonPoints = createPolygonPoints({
@@ -341,16 +364,23 @@ function createPrismShape({
   geometry.center()
   geometry.computeVertexNormals()
 
-  return createSolidShape(geometry)
+  return createSolidShape(geometry, { color })
 }
 
 function createPyramidShape({
-  angleBias,
-  depth,
-  sideVariation,
-  sides,
-  size,
-}: ShapeParameters): THREE.Object3D {
+  parameters,
+  color = 0xff8f3c,
+}: {
+  parameters: ShapeParameters
+  color?: THREE.ColorRepresentation
+}): THREE.Object3D {
+  const {
+    angleBias,
+    depth,
+    sideVariation,
+    sides,
+    size,
+  } = parameters
   const effectiveDepth = Math.max(depth, 0.05)
   const basePoints = createPolygonPoints({
     angleBias,
@@ -383,17 +413,24 @@ function createPyramidShape({
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
 
-  return createSolidShape(geometry, { color: 0xff8f3c })
+  return createSolidShape(geometry, { color })
 }
 
 function createSphereShape({
-  depth,
-  sideVariation,
-  sides,
-  size,
-  taper,
-  twist,
-}: ShapeParameters): THREE.Object3D {
+  parameters,
+  color = 0x8ee6ff,
+}: {
+  parameters: ShapeParameters
+  color?: THREE.ColorRepresentation
+}): THREE.Object3D {
+  const {
+    depth,
+    sideVariation,
+    sides,
+    size,
+    taper,
+    twist,
+  } = parameters
   const widthSegments = Math.max(8, Math.min(64, sides * 2))
   const heightSegments = Math.max(6, Math.min(32, sides))
   const geometry = new THREE.SphereGeometry(size, widthSegments, heightSegments)
@@ -402,7 +439,7 @@ function createSphereShape({
   applyCenteredDepthTaperAndTwist(geometry, depth, taper, twist)
   geometry.computeVertexNormals()
 
-  return createSolidShape(geometry, { color: 0x8ee6ff, edgeStyle: "wire" })
+  return createSolidShape(geometry, { color, edgeStyle: "wire" })
 }
 
 function createPolyhedronGeometry(sides: number, size: number) {
@@ -423,51 +460,71 @@ function createPolyhedronGeometry(sides: number, size: number) {
 }
 
 function createPolyhedronShape({
-  depth,
-  sides,
-  size,
-  taper,
-  twist,
-}: ShapeParameters): THREE.Object3D {
+  parameters,
+  color = 0x3cff9e,
+}: {
+  parameters: ShapeParameters
+  color?: THREE.ColorRepresentation
+}): THREE.Object3D {
+  const {
+    depth,
+    sides,
+    size,
+    taper,
+    twist,
+  } = parameters
   const geometry = createPolyhedronGeometry(sides, size)
 
   applyCenteredDepthTaperAndTwist(geometry, depth, taper, twist)
   geometry.computeVertexNormals()
 
-  return createSolidShape(geometry, { color: 0x3cff9e })
+  return createSolidShape(geometry, { color })
 }
 
 function create3DShape(
   family: ShapeFamily,
   parameters: ShapeParameters,
+  color?: THREE.ColorRepresentation,
 ): THREE.Object3D {
   switch (family) {
     case "prism":
-      return createPrismShape(parameters)
+      return createPrismShape({ parameters, color })
     case "pyramid":
-      return createPyramidShape(parameters)
+      return createPyramidShape({ parameters, color })
     case "sphere":
-      return createSphereShape(parameters)
+      return createSphereShape({ parameters, color })
     case "polyhedron":
-      return createPolyhedronShape(parameters)
+      return createPolyhedronShape({ parameters, color })
     default:
-      return createPrismShape(parameters)
+      return createPrismShape({ parameters, color })
   }
 }
 
 export function buildShape({
+  color,
   family,
   parameters,
   mode,
   rotation,
 }: {
+  color?: THREE.ColorRepresentation
   family: ShapeFamily
   parameters: ShapeParameters
   mode: ShapeMode
-  rotation: number
+  rotation: number | ShapeVector3
 }): THREE.Object3D {
   const shape =
-    mode === "2d" ? create2DShape(parameters) : create3DShape(family, parameters)
+    mode === "2d"
+      ? create2DShape({ parameters, color })
+      : create3DShape(family, parameters, color)
+
+  if (typeof rotation !== "number") {
+    const radians = rotationToRadians(rotation)
+
+    shape.rotation.set(radians.x, radians.y, radians.z)
+    return shape
+  }
+
   const radians = toRadians(rotation)
 
   if (mode === "2d") {

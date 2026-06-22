@@ -37,6 +37,32 @@ function isShapeFamily(value: unknown) {
   )
 }
 
+function isHexColor(value: unknown) {
+  return typeof value === "string" && /^#[0-9A-Fa-f]{6}$/.test(value)
+}
+
+function isShapeVector3(
+  value: unknown,
+  ranges: {
+    x: { min: number; max: number }
+    y: { min: number; max: number }
+    z: { min: number; max: number }
+  },
+) {
+  return (
+    isRecord(value) &&
+    isFiniteNumber(value.x) &&
+    isFiniteNumber(value.y) &&
+    isFiniteNumber(value.z) &&
+    value.x >= ranges.x.min &&
+    value.x <= ranges.x.max &&
+    value.y >= ranges.y.min &&
+    value.y <= ranges.y.max &&
+    value.z >= ranges.z.min &&
+    value.z <= ranges.z.max
+  )
+}
+
 function isShapeParameters(value: unknown) {
   return (
     isRecord(value) &&
@@ -79,8 +105,11 @@ function isShapeMotionMapping(value: unknown) {
       value.source === "syncSine") &&
     isFiniteNumber(value.amount) &&
     typeof value.invert === "boolean" &&
+    (value.mode === "oscillate" || value.mode === "continuous") &&
+    isFiniteNumber(value.resetMs) &&
     value.amount >= 0 &&
-    value.amount <= 360
+    value.amount <= 360 &&
+    value.resetMs >= 250
   )
 }
 
@@ -95,7 +124,48 @@ function isShapeMotionMappings(value: unknown) {
     isShapeMotionMapping(value.size) &&
     isShapeMotionMapping(value.taper) &&
     isShapeMotionMapping(value.twist) &&
-    isShapeMotionMapping(value.rotation)
+    isShapeMotionMapping(value.positionX) &&
+    isShapeMotionMapping(value.positionY) &&
+    isShapeMotionMapping(value.positionZ) &&
+    isShapeMotionMapping(value.rotationX) &&
+    isShapeMotionMapping(value.rotationY) &&
+    isShapeMotionMapping(value.rotationZ) &&
+    isShapeMotionMapping(value.colorHue)
+  )
+}
+
+function isShapePositionMode(value: unknown) {
+  return value === "manual" || value === "spiral"
+}
+
+function isShapeSpiralMotionDirection(value: unknown) {
+  return value === "clockwise" || value === "counterclockwise"
+}
+
+function isShapeSpiralMotionSettings(value: unknown) {
+  return (
+    isRecord(value) &&
+    typeof value.enabled === "boolean" &&
+    typeof value.visualize === "boolean" &&
+    isFiniteNumber(value.startRadius) &&
+    value.startRadius >= 0 &&
+    value.startRadius <= 20 &&
+    isVisualCvModulationSource(value.radiusSource) &&
+    isFiniteNumber(value.radiusCvAmount) &&
+    value.radiusCvAmount >= 0 &&
+    value.radiusCvAmount <= 20 &&
+    isFiniteNumber(value.degreesPerPulse) &&
+    value.degreesPerPulse >= 0 &&
+    value.degreesPerPulse <= 3600 &&
+    isFiniteNumber(value.depthPerPulse) &&
+    value.depthPerPulse >= 0 &&
+    value.depthPerPulse <= 100 &&
+    isFiniteNumber(value.resetMs) &&
+    value.resetMs >= 250 &&
+    isShapeSpiralMotionDirection(value.direction) &&
+    isFiniteNumber(value.startPhaseDegrees) &&
+    value.startPhaseDegrees >= -3600 &&
+    value.startPhaseDegrees <= 3600
   )
 }
 
@@ -105,10 +175,20 @@ function isAudioControlledShapeSettings(value: unknown) {
     typeof value.enabled === "boolean" &&
     (value.mode === "2d" || value.mode === "3d") &&
     isShapeFamily(value.family) &&
+    isHexColor(value.color) &&
     isShapeParameters(value.parameters) &&
-    isFiniteNumber(value.rotation) &&
-    value.rotation >= 0 &&
-    value.rotation <= 360 &&
+    isShapeVector3(value.position, {
+      x: { min: -1.5, max: 1.5 },
+      y: { min: -1, max: 1 },
+      z: { min: -2, max: 2 },
+    }) &&
+    isShapeVector3(value.rotation, {
+      x: { min: -180, max: 180 },
+      y: { min: -180, max: 180 },
+      z: { min: -180, max: 180 },
+    }) &&
+    isShapePositionMode(value.positionMode) &&
+    isShapeSpiralMotionSettings(value.spiralMotion) &&
     isShapeMotionMappings(value.motionMappings)
   )
 }
