@@ -33,6 +33,7 @@ import {
   getFrameAtTime,
 } from "@/features/songs/songAnalysisLogic"
 import type { SongAnalysis } from "@/features/songs/songTypes"
+import { normalizeAudioControlledShapeSettings } from "@/features/shapeGenerator/shapeGeneratorTypes"
 import { stageConfig } from "./stageConfig"
 import { createCamera, resizeCameraToViewport } from "./render/createCamera"
 import { startAnimationLoop } from "./render/animationLoop"
@@ -482,15 +483,15 @@ export function useStageRuntime() {
     const scene = createScene()
     scene.background = new THREE.Color(stageConfig.backgroundColor)
     const camera = createCamera(stageConfig.worldHeight)
+    const world = resizeCameraToViewport(camera, stageConfig.worldHeight)
     const colorControl = new ColorControlModule()
-    const spiralMotion = new SpiralMotionModule({ scene })
+    const spiralMotion = new SpiralMotionModule({ scene, world })
     const centerShape = new CenterShapeModule({ scene, spiralMotion })
     const ripplePaint = new RipplePaintModule({
       scene,
       maxRipples: stageConfig.maxRipples,
     })
     const trailPaint = new TrailPaintModule({ scene })
-    const world = resizeCameraToViewport(camera, stageConfig.worldHeight)
     let localPointerPrevious: PointerWorld | null = null
 
     audioFrameHandlerRef.current = (frame) => {
@@ -639,10 +640,17 @@ export function useStageRuntime() {
         message.type === "audio_settings_snapshot" ||
         message.type === "audio_settings_update"
       ) {
+        const normalizedSettings = {
+          ...message.settings,
+          centerShape: normalizeAudioControlledShapeSettings(
+            message.settings.centerShape,
+          ),
+        }
+
         setAudioRoutes((currentRoutes) => {
           const nextRoute = {
             audioInstanceId: message.audioInstanceId,
-            settings: message.settings,
+            settings: normalizedSettings,
           }
           const existingIndex = currentRoutes.findIndex(
             (route) => route.audioInstanceId === message.audioInstanceId,
@@ -658,9 +666,9 @@ export function useStageRuntime() {
         })
         spiralMotion.receiveAudioSettings(
           message.audioInstanceId,
-          message.settings,
+          normalizedSettings,
         )
-        centerShape.receiveAudioSettings(message.audioInstanceId, message.settings)
+        centerShape.receiveAudioSettings(message.audioInstanceId, normalizedSettings)
         visualCvRouteStatesRef.current.delete(message.audioInstanceId)
       }
 

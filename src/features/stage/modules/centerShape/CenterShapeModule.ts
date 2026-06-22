@@ -11,9 +11,11 @@ import type {
 import type { VisualCvRouteSignal } from "@/features/visualCv/visualCvTypes"
 import { getVisualCvModulationValue } from "@/features/visualCv/visualCvLogic"
 import {
+  applyShapeColor,
   buildShape,
   clearGroup,
   clamp,
+  disposeObject,
   getNearestPolyhedronSideCount,
 } from "@/features/shapeGenerator/shapeGeneratorThree"
 import type { StageModule } from "@/features/stage/stageTypes"
@@ -233,7 +235,6 @@ function applyShapeTransform(shapeObject: THREE.Object3D, shape: EffectiveShape)
 
 function getGeometrySignature(shape: EffectiveShape) {
   return JSON.stringify({
-    color: shape.color,
     family: shape.family,
     mode: shape.mode,
     parameters: shape.parameters,
@@ -245,6 +246,16 @@ function getTransformSignature(shape: EffectiveShape) {
     position: shape.position,
     rotation: shape.rotation,
   })
+}
+
+function withShapePosition(
+  shape: EffectiveShape,
+  position: ShapeVector3,
+): EffectiveShape {
+  return {
+    ...shape,
+    position,
+  }
 }
 
 export class CenterShapeModule implements StageModule {
@@ -266,6 +277,8 @@ export class CenterShapeModule implements StageModule {
   >()
 
   private shapeObject: THREE.Object3D | null = null
+
+  private spiralShapeObjects = new Map<string, THREE.Object3D>()
 
   private renderedGeometrySignature = ""
 
@@ -457,19 +470,35 @@ export class CenterShapeModule implements StageModule {
 
     const signal =
       this.routeSignalsByInstanceId.get(this.activeAudioInstanceId ?? "") ?? null
-    const spiralTransform = this.activeAudioInstanceId
-      ? this.options.spiralMotion.getTransform(
-          this.activeAudioInstanceId,
-          settings.centerShape.position,
-        )
-      : null
     const effectiveShape = getEffectiveShape(
       settings.centerShape,
       signal,
       this.getContinuousMotionOffsets(),
-      spiralTransform?.position ?? null,
     )
     const geometrySignature = getGeometrySignature(effectiveShape)
+
+    if (
+      settings.centerShape.positionMode === "spiral" &&
+      settings.centerShape.spiralMotion.enabled &&
+      this.activeAudioInstanceId
+    ) {
+      this.syncSpiralShapes({
+        audioInstanceId: this.activeAudioInstanceId,
+        effectiveShape,
+        geometrySignature,
+        origin: settings.centerShape.position,
+      })
+      return
+    }
+
+    this.syncManualShape(effectiveShape, geometrySignature)
+  }
+
+  private syncManualShape(
+    effectiveShape: EffectiveShape,
+    geometrySignature: string,
+  ) {
+    this.clearSpiralShapes()
 
     if (
       !this.shapeObject ||
@@ -480,6 +509,10 @@ export class CenterShapeModule implements StageModule {
       this.root.add(this.shapeObject)
       this.renderedGeometrySignature = geometrySignature
       this.renderedTransformSignature = ""
+    }
+
+    if (this.shapeObject) {
+      applyShapeColor(this.shapeObject, effectiveShape.color)
     }
 
     const transformSignature = getTransformSignature(effectiveShape)
@@ -493,10 +526,79 @@ export class CenterShapeModule implements StageModule {
     }
   }
 
+  private syncSpiralShapes({
+    audioInstanceId,
+    effectiveShape,
+    geometrySignature,
+    origin,
+  }: {
+    audioInstanceId: string
+    effectiveShape: EffectiveShape
+    geometrySignature: string
+    origin: ShapeVector3
+  }) {
+    this.clearManualShape()
+
+    if (geometrySignature !== this.renderedGeometrySignature) {
+      this.clearSpiralShapes()
+      this.renderedGeometrySignature = geometrySignature
+    }
+
+    const transforms = this.options.spiralMotion.getInstanceTransforms(
+      audioInstanceId,
+      origin,
+    )
+    const liveIds = new Set(transforms.map((transform) => transform.id))
+
+    for (const [id, shapeObject] of this.spiralShapeObjects) {
+      if (!liveIds.has(id)) {
+        this.root.remove(shapeObject)
+        disposeObject(shapeObject)
+        this.spiralShapeObjects.delete(id)
+      }
+    }
+
+    for (const transform of transforms) {
+      const shape = withShapePosition(effectiveShape, transform.position)
+      let shapeObject = this.spiralShapeObjects.get(transform.id)
+
+      if (!shapeObject) {
+        shapeObject = buildShape(shape)
+        this.spiralShapeObjects.set(transform.id, shapeObject)
+        this.root.add(shapeObject)
+      }
+
+      applyShapeColor(shapeObject, shape.color)
+      applyShapeTransform(shapeObject, shape)
+    }
+
+    this.renderedTransformSignature = ""
+  }
+
   private clearShape() {
-    this.shapeObject = null
+    this.clearManualShape()
+    this.clearSpiralShapes()
     this.renderedGeometrySignature = ""
     this.renderedTransformSignature = ""
-    clearGroup(this.root)
+  }
+
+  private clearManualShape() {
+    if (!this.shapeObject) {
+      return
+    }
+
+    this.root.remove(this.shapeObject)
+    disposeObject(this.shapeObject)
+    this.shapeObject = null
+    this.renderedTransformSignature = ""
+  }
+
+  private clearSpiralShapes() {
+    for (const shapeObject of this.spiralShapeObjects.values()) {
+      this.root.remove(shapeObject)
+      disposeObject(shapeObject)
+    }
+
+    this.spiralShapeObjects.clear()
   }
 }

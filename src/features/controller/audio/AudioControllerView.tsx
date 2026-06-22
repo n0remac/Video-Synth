@@ -851,6 +851,23 @@ function normalizeSpiralMotionSettings(
     return fallback
   }
 
+  const pathCount =
+    typeof value.pathCount === "number" && Number.isFinite(value.pathCount)
+      ? clamp(Math.round(value.pathCount), 1, 64)
+      : fallback.pathCount
+  const pathDurationMs =
+    typeof value.pathDurationMs === "number" &&
+    Number.isFinite(value.pathDurationMs)
+      ? Math.max(value.pathDurationMs, 250)
+      : typeof value.resetMs === "number" && Number.isFinite(value.resetMs)
+        ? Math.max(value.resetMs, 250)
+        : fallback.pathDurationMs
+  const maxActiveShapes =
+    typeof value.maxActiveShapes === "number" &&
+    Number.isFinite(value.maxActiveShapes)
+      ? clamp(Math.round(value.maxActiveShapes), pathCount, 512)
+      : Math.max(fallback.maxActiveShapes, pathCount)
+
   return {
     enabled:
       typeof value.enabled === "boolean" ? value.enabled : fallback.enabled,
@@ -870,6 +887,13 @@ function normalizeSpiralMotionSettings(
       Number.isFinite(value.radiusCvAmount)
         ? Math.max(value.radiusCvAmount, 0)
         : fallback.radiusCvAmount,
+    moveSource: isVisualCvModulationSourceValue(value.moveSource)
+      ? value.moveSource
+      : fallback.moveSource,
+    moveRate:
+      typeof value.moveRate === "number" && Number.isFinite(value.moveRate)
+        ? clamp(value.moveRate, 0, 20)
+        : fallback.moveRate,
     degreesPerPulse:
       typeof value.degreesPerPulse === "number" &&
       Number.isFinite(value.degreesPerPulse)
@@ -880,10 +904,20 @@ function normalizeSpiralMotionSettings(
       Number.isFinite(value.depthPerPulse)
         ? Math.max(value.depthPerPulse, 0)
         : fallback.depthPerPulse,
-    resetMs:
-      typeof value.resetMs === "number" && Number.isFinite(value.resetMs)
-        ? Math.max(value.resetMs, 250)
-        : fallback.resetMs,
+    pathDurationMs,
+    pathCount,
+    spawnSource: isVisualCvModulationSourceValue(value.spawnSource)
+      ? value.spawnSource
+      : fallback.spawnSource,
+    spawnRateHz:
+      typeof value.spawnRateHz === "number" && Number.isFinite(value.spawnRateHz)
+        ? clamp(value.spawnRateHz, 0, 20)
+        : fallback.spawnRateHz,
+    maxActiveShapes,
+    edgePadding:
+      typeof value.edgePadding === "number" && Number.isFinite(value.edgePadding)
+        ? clamp(value.edgePadding, 0, 0.5)
+        : fallback.edgePadding,
     direction:
       value.direction === "clockwise" || value.direction === "counterclockwise"
         ? value.direction
@@ -1281,7 +1315,11 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
     settings.centerShape.motionMappings,
     settings.centerShape.positionMode,
     settings.centerShape.spiralMotion.enabled,
-    settings.centerShape.spiralMotion.resetMs,
+    settings.centerShape.spiralMotion.moveRate,
+    settings.centerShape.spiralMotion.moveSource,
+    settings.centerShape.spiralMotion.pathDurationMs,
+    settings.centerShape.spiralMotion.spawnRateHz,
+    settings.centerShape.spiralMotion.spawnSource,
   ])
 
   function updateSettings(patch: Partial<AudioCircleSettings>) {
@@ -1491,13 +1529,20 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
   const centerShape = settings.centerShape
   const visibleShapeControls = getVisibleShapeControls()
   const colorMotionMapping = centerShape.motionMappings[colorMotionDefinition.name]
-  const spiralResetStartedAt =
+  const spiralSpawnStartedAt =
     resetCycleStartsRef.current.spiral ?? resetProgressNow
-  const spiralResetProgress = getResetProgress({
-    now: resetProgressNow,
-    resetMs: centerShape.spiralMotion.resetMs,
-    startedAt: spiralResetStartedAt,
-  })
+  const spiralSpawnIntervalMs =
+    centerShape.spiralMotion.spawnRateHz > 0
+      ? 1000 / centerShape.spiralMotion.spawnRateHz
+      : 0
+  const spiralSpawnProgress =
+    spiralSpawnIntervalMs > 0
+      ? getResetProgress({
+          now: resetProgressNow,
+          resetMs: spiralSpawnIntervalMs,
+          startedAt: spiralSpawnStartedAt,
+        })
+      : 0
 
   return (
     <main className="controller-shell audio-controller-shell">
@@ -2035,13 +2080,158 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
 
             <div className="audio-shape-control">
               <ControlSlider
-                label="Start Radius"
+                label="Path Count"
+                value={centerShape.spiralMotion.pathCount}
+                min={1}
+                max={64}
+                step={1}
+                onValueChange={(pathCount) =>
+                  updateCenterShapeSpiralMotion({
+                    pathCount: Math.round(pathCount),
+                    maxActiveShapes: Math.max(
+                      centerShape.spiralMotion.maxActiveShapes,
+                      Math.round(pathCount),
+                    ),
+                  })
+                }
+              />
+            </div>
+
+            <div className="audio-shape-control">
+              <label className="control-field">
+                <span>Move Source</span>
+                <select
+                  value={centerShape.spiralMotion.moveSource}
+                  onChange={(event) =>
+                    updateCenterShapeSpiralMotion({
+                      moveSource: event.target.value as VisualCvModulationSource,
+                    })
+                  }
+                >
+                  {visualCvModulationSourceOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="audio-shape-control">
+              <ControlSlider
+                label="Move Speed Multiplier"
+                value={centerShape.spiralMotion.moveRate}
+                min={0}
+                max={20}
+                step={0.05}
+                onValueChange={(moveRate) =>
+                  updateCenterShapeSpiralMotion({ moveRate })
+                }
+              />
+            </div>
+
+            <div className="audio-shape-control">
+              <label className="control-field">
+                <span>Spawn Source</span>
+                <select
+                  value={centerShape.spiralMotion.spawnSource}
+                  onChange={(event) =>
+                    updateCenterShapeSpiralMotion({
+                      spawnSource:
+                        event.target.value as VisualCvModulationSource,
+                    })
+                  }
+                >
+                  {visualCvModulationSourceOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="audio-shape-control">
+              <label className="control-field">
+                <span>
+                  Spawn Rate Multiplier
+                  <strong>
+                    {Number(centerShape.spiralMotion.spawnRateHz.toFixed(2))}x
+                  </strong>
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={20}
+                  step={0.05}
+                  value={centerShape.spiralMotion.spawnRateHz}
+                  onChange={(event) =>
+                    updateCenterShapeSpiralMotion({
+                      spawnRateHz: Number(event.target.value),
+                    })
+                  }
+                />
+                <div className="audio-shape-reset-row">
+                  <span className="audio-shape-reset-unit">next</span>
+                  <span className="audio-shape-reset-unit">
+                    {centerShape.spiralMotion.spawnRateHz > 0
+                      ? formatMilliseconds(spiralSpawnIntervalMs)
+                      : "off"}
+                  </span>
+                  <span
+                    className="audio-shape-reset-spinner"
+                    aria-label={`Spawn cycle ${Math.round(spiralSpawnProgress * 100)}%`}
+                    style={
+                      {
+                        "--reset-progress": `${spiralSpawnProgress * 360}deg`,
+                      } as CSSProperties
+                    }
+                    title={`Spawn cycle ${Math.round(spiralSpawnProgress * 100)}%`}
+                  />
+                </div>
+              </label>
+            </div>
+
+            <div className="audio-shape-control">
+              <ControlSlider
+                label="Max Shapes"
+                value={centerShape.spiralMotion.maxActiveShapes}
+                min={centerShape.spiralMotion.pathCount}
+                max={512}
+                step={1}
+                onValueChange={(maxActiveShapes) =>
+                  updateCenterShapeSpiralMotion({
+                    maxActiveShapes: Math.max(
+                      Math.round(maxActiveShapes),
+                      centerShape.spiralMotion.pathCount,
+                    ),
+                  })
+                }
+              />
+            </div>
+
+            <div className="audio-shape-control">
+              <ControlSlider
+                label="Edge Radius Scale"
                 value={centerShape.spiralMotion.startRadius}
                 min={0}
                 max={4}
                 step={0.01}
                 onValueChange={(startRadius) =>
                   updateCenterShapeSpiralMotion({ startRadius })
+                }
+              />
+            </div>
+
+            <div className="audio-shape-control">
+              <ControlSlider
+                label="Edge Padding"
+                value={centerShape.spiralMotion.edgePadding}
+                min={0}
+                max={0.5}
+                step={0.01}
+                onValueChange={(edgePadding) =>
+                  updateCenterShapeSpiralMotion({ edgePadding })
                 }
               />
             </div>
@@ -2108,9 +2298,9 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
             <div className="audio-shape-control">
               <label className="control-field">
                 <span>
-                  Reset Seconds
+                  Path Duration
                   <strong>
-                    {formatMilliseconds(centerShape.spiralMotion.resetMs)}
+                    {formatMilliseconds(centerShape.spiralMotion.pathDurationMs)}
                   </strong>
                 </span>
                 <div className="audio-shape-reset-row">
@@ -2119,7 +2309,7 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
                     min={0.25}
                     step={0.25}
                     value={formatResetSecondsInput(
-                      centerShape.spiralMotion.resetMs,
+                      centerShape.spiralMotion.pathDurationMs,
                     )}
                     onChange={(event) => {
                       const nextSeconds = Number(event.target.value)
@@ -2129,21 +2319,11 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
                       }
 
                       updateCenterShapeSpiralMotion({
-                        resetMs: Math.max(nextSeconds * 1000, 250),
+                        pathDurationMs: Math.max(nextSeconds * 1000, 250),
                       })
                     }}
                   />
                   <span className="audio-shape-reset-unit">sec</span>
-                  <span
-                    className="audio-shape-reset-spinner"
-                    aria-label={`Spiral reset timer ${Math.round(spiralResetProgress * 100)}%`}
-                    style={
-                      {
-                        "--reset-progress": `${spiralResetProgress * 360}deg`,
-                      } as CSSProperties
-                    }
-                    title={`Spiral reset timer ${Math.round(spiralResetProgress * 100)}%`}
-                  />
                 </div>
               </label>
             </div>

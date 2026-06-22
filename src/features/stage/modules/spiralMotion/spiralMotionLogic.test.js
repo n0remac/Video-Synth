@@ -1,10 +1,11 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import {
-  createSpiralMotionState,
-  getSpiralEffectiveRadius,
-  getSpiralTransform,
-  updateSpiralMotionState,
+  createSpiralMotionRuntimeState,
+  getSpiralEffectiveRadiusScale,
+  getSpiralInstanceTransforms,
+  getSpiralPathAnglesDegrees,
+  updateSpiralMotionRuntimeState,
 } from "./spiralMotionLogic.ts"
 
 const baseSettings = {
@@ -13,11 +14,23 @@ const baseSettings = {
   startRadius: 1,
   radiusSource: "level",
   radiusCvAmount: 0,
+  moveSource: "syncSine",
+  moveRate: 1,
   degreesPerPulse: 180,
   depthPerPulse: 0.5,
-  resetMs: 4000,
+  pathDurationMs: 4000,
+  pathCount: 4,
+  spawnSource: "syncSine",
+  spawnRateHz: 1,
+  maxActiveShapes: 128,
+  edgePadding: 0,
   direction: "counterclockwise",
   startPhaseDegrees: 0,
+}
+
+const world = {
+  worldWidth: 2,
+  worldHeight: 1,
 }
 
 function assertClose(actual, expected) {
@@ -39,7 +52,7 @@ function createSignal(patch = {}) {
     motion: 0,
     smooth: 0,
     envelope: 0,
-    syncSine: 0,
+    syncSine: 1,
     frequencyHz: 2,
     rangeTriggered: false,
     envelopeTriggered: false,
@@ -48,75 +61,216 @@ function createSignal(patch = {}) {
   }
 }
 
-test("spiral phase advances by degrees per pulse after one pulse worth of time", () => {
-  const nextState = updateSpiralMotionState({
-    dt: 0.5,
-    settings: baseSettings,
-    signal: createSignal({ frequencyHz: 2 }),
-    state: createSpiralMotionState(baseSettings),
-  })
+function update(state, patch = {}) {
+  return updateSpiralMotionRuntimeState({
+    dt: patch.dt ?? 0,
+    settings: patch.settings ?? baseSettings,
+    signal: patch.signal ?? createSignal(),
+    state,
+  }).state
+}
 
-  assertClose(nextState.phaseDegrees, 180)
+test("spiral path count produces evenly spaced path angles", () => {
+  assert.deepEqual(getSpiralPathAnglesDegrees(baseSettings), [0, 90, 180, 270])
 })
 
-test("spiral radius moves inward over reset progress", () => {
-  const transform = getSpiralTransform({
-    origin: { x: 0, y: 0, z: 0 },
-    settings: baseSettings,
-    signal: createSignal(),
-    state: {
-      elapsedMs: 2000,
-      phaseDegrees: 0,
-      zOffset: 0,
-      lastFrequencyHz: 2,
-    },
-  })
-
-  assert.ok(transform.radius < baseSettings.startRadius)
-  assert.ok(transform.radius > 0)
+test("spiral path count one creates exactly one path", () => {
+  assert.deepEqual(
+    getSpiralPathAnglesDegrees({
+      ...baseSettings,
+      pathCount: 1,
+      startPhaseDegrees: 45,
+    }),
+    [45],
+  )
 })
 
-test("spiral z offset moves away from the camera with depth per pulse", () => {
-  const nextState = updateSpiralMotionState({
-    dt: 1,
-    settings: baseSettings,
-    signal: createSignal({ frequencyHz: 2 }),
-    state: createSpiralMotionState(baseSettings),
-  })
+test("spiral update spawns one full initial ring", () => {
+  const state = update(createSpiralMotionRuntimeState())
 
-  assertClose(nextState.zOffset, -1)
+  assert.equal(state.instances.length, baseSettings.pathCount)
+  assert.deepEqual(
+    state.instances.map((instance) => instance.pathIndex),
+    [0, 1, 2, 3],
+  )
 })
 
-test("spiral reset restores phase progress and z offset", () => {
+test("spiral spawn frequency creates additional full rings on schedule", () => {
   const settings = {
     ...baseSettings,
-    startPhaseDegrees: 45,
+    spawnRateHz: 2,
   }
-  const nextState = updateSpiralMotionState({
-    dt: 0.02,
-    settings,
-    signal: createSignal({ frequencyHz: 2 }),
-    state: {
-      elapsedMs: 3990,
-      phaseDegrees: 123,
-      zOffset: -4,
-      lastFrequencyHz: 2,
-    },
-  })
+  const signal = createSignal({ frequencyHz: 1 })
+  let state = update(createSpiralMotionRuntimeState(), { settings, signal })
 
-  assertClose(nextState.elapsedMs, 0)
-  assertClose(nextState.phaseDegrees, 45)
-  assertClose(nextState.zOffset, 0)
+  state = update(state, { dt: 0.49, settings, signal })
+  assert.equal(state.instances.length, 4)
+
+  state = update(state, { dt: 0.01, settings, signal })
+  assert.equal(state.instances.length, 8)
 })
 
-test("spiral radius cv modulation affects spiral size", () => {
-  const radius = getSpiralEffectiveRadius(
-    {
-      ...baseSettings,
-      radiusCvAmount: 0.4,
-    },
+test("spiral spawn rate zero creates only the initial ring", () => {
+  const settings = {
+    ...baseSettings,
+    moveRate: 0,
+    spawnRateHz: 0,
+  }
+  let state = update(createSpiralMotionRuntimeState(), { settings })
+
+  state = update(state, { dt: 3, settings })
+
+  assert.equal(state.instances.length, 4)
+})
+
+test("spiral movement advances from selected pulse-synced source and move rate", () => {
+  const settings = {
+    ...baseSettings,
+    moveSource: "level",
+    moveRate: 2,
+    pathDurationMs: 4000,
+    spawnRateHz: 0,
+  }
+  let state = update(createSpiralMotionRuntimeState(), {
+    settings,
+    signal: createSignal({ frequencyHz: 1, level: 0 }),
+  })
+
+  state = update(state, {
+    dt: 1,
+    settings,
+    signal: createSignal({ frequencyHz: 1, level: 0 }),
+  })
+  assert.equal(state.instances[0].ageMs, 0)
+
+  state = update(state, {
+    dt: 1,
+    settings,
+    signal: createSignal({ frequencyHz: 1, level: 0.5 }),
+  })
+
+  assert.equal(state.instances[0].ageMs, 1000)
+})
+
+test("spiral spawn scheduling advances from selected pulse-synced source", () => {
+  const settings = {
+    ...baseSettings,
+    pathCount: 2,
+    spawnSource: "level",
+    spawnRateHz: 1,
+  }
+  let state = update(createSpiralMotionRuntimeState(), {
+    settings,
+    signal: createSignal({ frequencyHz: 1, level: 0 }),
+  })
+
+  state = update(state, {
+    dt: 2,
+    settings,
+    signal: createSignal({ frequencyHz: 1, level: 0 }),
+  })
+  assert.equal(state.instances.length, 2)
+
+  state = update(state, {
+    dt: 1,
+    settings,
+    signal: createSignal({ frequencyHz: 1, level: 1 }),
+  })
+
+  assert.equal(state.instances.length, 4)
+})
+
+test("spiral repeated spawns create multiple shapes per path", () => {
+  const settings = {
+    ...baseSettings,
+    pathCount: 2,
+    spawnRateHz: 1,
+  }
+  const signal = createSignal({ frequencyHz: 1 })
+  let state = update(createSpiralMotionRuntimeState(), { settings, signal })
+  state = update(state, { dt: 1, settings, signal })
+  state = update(state, { dt: 1, settings, signal })
+
+  assert.equal(state.instances.length, 6)
+  assert.equal(
+    state.instances.filter((instance) => instance.pathIndex === 0).length,
+    3,
+  )
+  assert.equal(
+    state.instances.filter((instance) => instance.pathIndex === 1).length,
+    3,
+  )
+})
+
+test("spiral shapes are pruned after path duration", () => {
+  const settings = {
+    ...baseSettings,
+    pathDurationMs: 1000,
+    spawnRateHz: 0,
+  }
+  let state = update(createSpiralMotionRuntimeState(), { settings })
+
+  state = update(state, { dt: 1, settings })
+
+  assert.equal(state.instances.length, 0)
+})
+
+test("spiral max active shapes caps oldest instances", () => {
+  const settings = {
+    ...baseSettings,
+    pathCount: 2,
+    spawnRateHz: 10,
+    maxActiveShapes: 4,
+  }
+  const signal = createSignal({ frequencyHz: 1 })
+  let state = update(createSpiralMotionRuntimeState(), { settings, signal })
+  state = update(state, { dt: 0.1, settings, signal })
+  state = update(state, { dt: 0.1, settings, signal })
+
+  assert.equal(state.instances.length, 4)
+  assert.deepEqual(
+    state.instances.map((instance) => instance.id),
+    ["spiral-3", "spiral-4", "spiral-5", "spiral-6"],
+  )
+})
+
+test("spiral phase and z move by pulse count since birth", () => {
+  let state = update(createSpiralMotionRuntimeState())
+  state = update(state, { dt: 0.5, signal: createSignal({ frequencyHz: 2 }) })
+
+  const transform = getSpiralInstanceTransforms({
+    origin: { x: 0, y: 0, z: 0 },
+    settings: baseSettings,
+    signal: createSignal({ frequencyHz: 2 }),
+    state,
+    world,
+  })[0]
+
+  assertClose(transform.phaseDegrees, 180)
+  assertClose(transform.position.z, -0.5)
+})
+
+test("spiral radius cv modulation affects screen-edge radius scale", () => {
+  const settings = {
+    ...baseSettings,
+    radiusCvAmount: 0.4,
+  }
+  const radiusScale = getSpiralEffectiveRadiusScale(
+    settings,
     createSignal({ level: 0.5 }),
   )
+  const state = update(createSpiralMotionRuntimeState(), {
+    settings,
+    signal: createSignal({ level: 0.5 }),
+  })
+  const transform = getSpiralInstanceTransforms({
+    origin: { x: 0, y: 0, z: 0 },
+    settings,
+    signal: createSignal({ level: 0.5 }),
+    state,
+    world,
+  })[0]
 
-  assertClose(radius, 1.2)
+  assertClose(radiusScale, 1.2)
+  assertClose(transform.position.x, 1.2)
 })

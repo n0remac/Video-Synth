@@ -67,11 +67,19 @@ export type ShapeSpiralMotionSettings = {
   startRadius: number
   radiusSource: VisualCvModulationSource
   radiusCvAmount: number
+  moveSource: VisualCvModulationSource
+  moveRate: number
   degreesPerPulse: number
   depthPerPulse: number
-  resetMs: number
+  pathDurationMs: number
+  pathCount: number
+  spawnSource: VisualCvModulationSource
+  spawnRateHz: number
+  maxActiveShapes: number
+  edgePadding: number
   direction: ShapeSpiralMotionDirection
   startPhaseDegrees: number
+  resetMs?: number
 }
 
 export type AudioControlledShapeSettings = {
@@ -139,14 +147,145 @@ export const defaultShapeMotionMapping: ShapeMotionMapping = {
 export const defaultShapeSpiralMotionSettings: ShapeSpiralMotionSettings = {
   enabled: false,
   visualize: true,
-  startRadius: 0.65,
+  startRadius: 1,
   radiusSource: "smooth",
   radiusCvAmount: 0.25,
+  moveSource: "syncSine",
+  moveRate: 1,
   degreesPerPulse: 180,
   depthPerPulse: 0.5,
-  resetMs: 4000,
+  pathDurationMs: 4000,
+  pathCount: 8,
+  spawnSource: "syncSine",
+  spawnRateHz: 0.5,
+  maxActiveShapes: 128,
+  edgePadding: 0.06,
   direction: "clockwise",
   startPhaseDegrees: 0,
+}
+
+function clampSetting(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max)
+}
+
+function isRecordValue(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
+}
+
+function isVisualCvModulationSourceValue(
+  value: unknown,
+): value is VisualCvModulationSource {
+  return (
+    value === "level" ||
+    value === "rise" ||
+    value === "fall" ||
+    value === "motion" ||
+    value === "smooth" ||
+    value === "envelope" ||
+    value === "syncSine"
+  )
+}
+
+function normalizeShapeVector3(
+  value: unknown,
+  fallback: ShapeVector3,
+): ShapeVector3 {
+  if (!isRecordValue(value)) {
+    return fallback
+  }
+
+  return {
+    x: typeof value.x === "number" && Number.isFinite(value.x) ? value.x : fallback.x,
+    y: typeof value.y === "number" && Number.isFinite(value.y) ? value.y : fallback.y,
+    z: typeof value.z === "number" && Number.isFinite(value.z) ? value.z : fallback.z,
+  }
+}
+
+export function normalizeShapeSpiralMotionSettings(
+  value: unknown,
+  fallback: ShapeSpiralMotionSettings = defaultShapeSpiralMotionSettings,
+): ShapeSpiralMotionSettings {
+  if (!isRecordValue(value)) {
+    return { ...fallback }
+  }
+
+  const pathCount =
+    typeof value.pathCount === "number" && Number.isFinite(value.pathCount)
+      ? clampSetting(Math.round(value.pathCount), 1, 64)
+      : fallback.pathCount
+  const pathDurationMs =
+    typeof value.pathDurationMs === "number" &&
+    Number.isFinite(value.pathDurationMs)
+      ? Math.max(value.pathDurationMs, 250)
+      : typeof value.resetMs === "number" && Number.isFinite(value.resetMs)
+        ? Math.max(value.resetMs, 250)
+        : fallback.pathDurationMs
+  const maxActiveShapes =
+    typeof value.maxActiveShapes === "number" &&
+    Number.isFinite(value.maxActiveShapes)
+      ? clampSetting(Math.round(value.maxActiveShapes), pathCount, 512)
+      : Math.max(fallback.maxActiveShapes, pathCount)
+
+  return {
+    enabled:
+      typeof value.enabled === "boolean" ? value.enabled : fallback.enabled,
+    visualize:
+      typeof value.visualize === "boolean"
+        ? value.visualize
+        : fallback.visualize,
+    startRadius:
+      typeof value.startRadius === "number" && Number.isFinite(value.startRadius)
+        ? Math.max(value.startRadius, 0)
+        : fallback.startRadius,
+    radiusSource: isVisualCvModulationSourceValue(value.radiusSource)
+      ? value.radiusSource
+      : fallback.radiusSource,
+    radiusCvAmount:
+      typeof value.radiusCvAmount === "number" &&
+      Number.isFinite(value.radiusCvAmount)
+        ? Math.max(value.radiusCvAmount, 0)
+        : fallback.radiusCvAmount,
+    moveSource: isVisualCvModulationSourceValue(value.moveSource)
+      ? value.moveSource
+      : fallback.moveSource,
+    moveRate:
+      typeof value.moveRate === "number" && Number.isFinite(value.moveRate)
+        ? clampSetting(value.moveRate, 0, 20)
+        : fallback.moveRate,
+    degreesPerPulse:
+      typeof value.degreesPerPulse === "number" &&
+      Number.isFinite(value.degreesPerPulse)
+        ? Math.max(value.degreesPerPulse, 0)
+        : fallback.degreesPerPulse,
+    depthPerPulse:
+      typeof value.depthPerPulse === "number" &&
+      Number.isFinite(value.depthPerPulse)
+        ? Math.max(value.depthPerPulse, 0)
+        : fallback.depthPerPulse,
+    pathDurationMs,
+    pathCount,
+    spawnSource: isVisualCvModulationSourceValue(value.spawnSource)
+      ? value.spawnSource
+      : fallback.spawnSource,
+    spawnRateHz:
+      typeof value.spawnRateHz === "number" && Number.isFinite(value.spawnRateHz)
+        ? clampSetting(value.spawnRateHz, 0, 20)
+        : fallback.spawnRateHz,
+    maxActiveShapes,
+    edgePadding:
+      typeof value.edgePadding === "number" && Number.isFinite(value.edgePadding)
+        ? clampSetting(value.edgePadding, 0, 0.5)
+        : fallback.edgePadding,
+    direction:
+      value.direction === "clockwise" || value.direction === "counterclockwise"
+        ? value.direction
+        : fallback.direction,
+    startPhaseDegrees:
+      typeof value.startPhaseDegrees === "number" &&
+      Number.isFinite(value.startPhaseDegrees)
+        ? value.startPhaseDegrees
+        : fallback.startPhaseDegrees,
+  }
 }
 
 export function createDefaultShapeMotionMappings(): Record<
@@ -160,6 +299,44 @@ export function createDefaultShapeMotionMappings(): Record<
     }),
     {} as Record<ShapeControlName, ShapeMotionMapping>,
   )
+}
+
+export function normalizeAudioControlledShapeSettings(
+  value: AudioControlledShapeSettings,
+): AudioControlledShapeSettings {
+  const defaults = createDefaultAudioControlledShapeSettings()
+  const rawValue = value as Partial<AudioControlledShapeSettings> & {
+    position?: unknown
+    positionMode?: unknown
+    rotation?: unknown
+    spiralMotion?: unknown
+  }
+  const motionMappings = shapeControlNames.reduce((mappings, controlName) => {
+    mappings[controlName] = {
+      ...defaults.motionMappings[controlName],
+      ...rawValue.motionMappings?.[controlName],
+    }
+
+    return mappings
+  }, {} as AudioControlledShapeSettings["motionMappings"])
+
+  return {
+    ...defaults,
+    ...value,
+    parameters: {
+      ...defaults.parameters,
+      ...rawValue.parameters,
+    },
+    position: normalizeShapeVector3(rawValue.position, defaults.position),
+    positionMode:
+      rawValue.positionMode === "spiral" ? "spiral" : defaults.positionMode,
+    rotation: normalizeShapeVector3(rawValue.rotation, defaults.rotation),
+    spiralMotion: normalizeShapeSpiralMotionSettings(
+      rawValue.spiralMotion,
+      defaults.spiralMotion,
+    ),
+    motionMappings,
+  }
 }
 
 export function createDefaultAudioControlledShapeSettings(): AudioControlledShapeSettings {

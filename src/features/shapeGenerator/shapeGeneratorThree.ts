@@ -13,6 +13,12 @@ type DisposableObject = THREE.Object3D & {
   material?: THREE.Material | THREE.Material[]
 }
 
+type ShapeColorMaterial = THREE.Material & {
+  color?: THREE.Color
+}
+
+const shapeFillMaterialKey = "shapeFillMaterial"
+
 function toRadians(degrees: number): number {
   return (degrees / 180) * Math.PI
 }
@@ -136,6 +142,47 @@ export function clearGroup(group: THREE.Group) {
   })
 }
 
+function markShapeFillMaterial<TMaterial extends THREE.Material>(
+  material: TMaterial,
+) {
+  material.userData[shapeFillMaterialKey] = true
+
+  return material
+}
+
+function applyColorToMaterial(
+  material: THREE.Material,
+  color: THREE.ColorRepresentation,
+) {
+  const colorMaterial = material as ShapeColorMaterial
+
+  if (material.userData[shapeFillMaterialKey] !== true || !colorMaterial.color) {
+    return
+  }
+
+  colorMaterial.color.set(color)
+}
+
+export function applyShapeColor(
+  object: THREE.Object3D,
+  color: THREE.ColorRepresentation,
+) {
+  object.traverse((child) => {
+    const disposable = child as DisposableObject
+
+    if (Array.isArray(disposable.material)) {
+      disposable.material.forEach((material) =>
+        applyColorToMaterial(material, color),
+      )
+      return
+    }
+
+    if (disposable.material) {
+      applyColorToMaterial(disposable.material, color)
+    }
+  })
+}
+
 function createSolidShape(
   geometry: THREE.BufferGeometry,
   {
@@ -147,14 +194,14 @@ function createSolidShape(
   } = {},
 ): THREE.Object3D {
   const group = new THREE.Group()
-  const mesh = new THREE.Mesh(
-    geometry,
+  const fillMaterial = markShapeFillMaterial(
     new THREE.MeshStandardMaterial({
       color,
       metalness: 0.18,
       roughness: 0.48,
     }),
   )
+  const mesh = new THREE.Mesh(geometry, fillMaterial)
   const edgeGeometry =
     edgeStyle === "wire"
       ? new THREE.WireframeGeometry(geometry)
@@ -195,13 +242,13 @@ function create2DShape({
   })
   const shape = createPolygonShape(polygonPoints)
   const fillGeometry = new THREE.ShapeGeometry(shape)
-  const fill = new THREE.Mesh(
-    fillGeometry,
+  const fillMaterial = markShapeFillMaterial(
     new THREE.MeshBasicMaterial({
       color,
       side: THREE.DoubleSide,
     }),
   )
+  const fill = new THREE.Mesh(fillGeometry, fillMaterial)
   const outlinePoints = polygonPoints
     .concat(polygonPoints[0])
     .map((point) => new THREE.Vector3(point.x, point.y, 0.04))

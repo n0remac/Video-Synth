@@ -14,12 +14,19 @@ const defaultShapeMotionMapping = {
 const defaultSpiralMotionSettings = {
   enabled: false,
   visualize: true,
-  startRadius: 0.65,
+  startRadius: 1,
   radiusSource: "smooth",
   radiusCvAmount: 0.25,
+  moveSource: "syncSine",
+  moveRate: 1,
   degreesPerPulse: 180,
   depthPerPulse: 0.5,
-  resetMs: 4000,
+  pathDurationMs: 4000,
+  pathCount: 8,
+  spawnSource: "syncSine",
+  spawnRateHz: 0.5,
+  maxActiveShapes: 128,
+  edgePadding: 0.06,
   direction: "clockwise",
   startPhaseDegrees: 0,
 }
@@ -149,7 +156,7 @@ test("parses audio settings updates with center shape spiral motion", () => {
   settings.centerShape.spiralMotion = {
     ...defaultSpiralMotionSettings,
     enabled: true,
-    resetMs: 24 * 60 * 60 * 1000,
+    pathDurationMs: 24 * 60 * 60 * 1000,
     direction: "counterclockwise",
   }
 
@@ -166,15 +173,64 @@ test("parses audio settings updates with center shape spiral motion", () => {
   assert.equal(message?.type, "audio_settings_update")
   assert.equal(message?.settings.centerShape.positionMode, "spiral")
   assert.equal(
-    message?.settings.centerShape.spiralMotion.resetMs,
+    message?.settings.centerShape.spiralMotion.pathDurationMs,
     24 * 60 * 60 * 1000,
   )
 })
 
+test("parses legacy center shape spiral reset timers", () => {
+  const settings = JSON.parse(JSON.stringify(validAudioSettings))
+  settings.centerShape.positionMode = "spiral"
+  settings.centerShape.spiralMotion = {
+    enabled: true,
+    visualize: true,
+    startRadius: 0.65,
+    radiusSource: "smooth",
+    radiusCvAmount: 0.25,
+    degreesPerPulse: 180,
+    depthPerPulse: 0.5,
+    resetMs: 8000,
+    direction: "clockwise",
+    startPhaseDegrees: 0,
+  }
+
+  const message = parseVisualizerMessage(
+    JSON.stringify({
+      type: "audio_settings_update",
+      userId: "user-1",
+      audioInstanceId: "bass_instance-1",
+      settings,
+      timestamp: 1000,
+    }),
+  )
+
+  assert.equal(message?.type, "audio_settings_update")
+  assert.equal(message?.settings.centerShape.spiralMotion.resetMs, 8000)
+})
+
 test("rejects audio settings updates with invalid center shape spiral settings", () => {
-  const negativeResetSettings = JSON.parse(JSON.stringify(validAudioSettings))
-  negativeResetSettings.centerShape.positionMode = "spiral"
-  negativeResetSettings.centerShape.spiralMotion.resetMs = -1
+  const invalidDurationSettings = JSON.parse(JSON.stringify(validAudioSettings))
+  invalidDurationSettings.centerShape.positionMode = "spiral"
+  invalidDurationSettings.centerShape.spiralMotion.pathDurationMs = -1
+
+  const invalidPathCountSettings = JSON.parse(JSON.stringify(validAudioSettings))
+  invalidPathCountSettings.centerShape.spiralMotion.pathCount = 0
+
+  const invalidSpawnRateSettings = JSON.parse(JSON.stringify(validAudioSettings))
+  invalidSpawnRateSettings.centerShape.spiralMotion.spawnRateHz = -0.1
+
+  const invalidMoveSourceSettings = JSON.parse(JSON.stringify(validAudioSettings))
+  invalidMoveSourceSettings.centerShape.spiralMotion.moveSource = "sidechain"
+
+  const invalidMoveRateSettings = JSON.parse(JSON.stringify(validAudioSettings))
+  invalidMoveRateSettings.centerShape.spiralMotion.moveRate = -0.1
+
+  const invalidSpawnSourceSettings = JSON.parse(JSON.stringify(validAudioSettings))
+  invalidSpawnSourceSettings.centerShape.spiralMotion.spawnSource = "clock"
+
+  const invalidMaxShapesSettings = JSON.parse(JSON.stringify(validAudioSettings))
+  invalidMaxShapesSettings.centerShape.spiralMotion.pathCount = 8
+  invalidMaxShapesSettings.centerShape.spiralMotion.maxActiveShapes = 4
 
   const invalidDirectionSettings = JSON.parse(JSON.stringify(validAudioSettings))
   invalidDirectionSettings.centerShape.spiralMotion.direction = "sideways"
@@ -183,7 +239,13 @@ test("rejects audio settings updates with invalid center shape spiral settings",
   invalidPositionModeSettings.centerShape.positionMode = "orbit"
 
   for (const settings of [
-    negativeResetSettings,
+    invalidDurationSettings,
+    invalidPathCountSettings,
+    invalidSpawnRateSettings,
+    invalidMoveSourceSettings,
+    invalidMoveRateSettings,
+    invalidSpawnSourceSettings,
+    invalidMaxShapesSettings,
     invalidDirectionSettings,
     invalidPositionModeSettings,
   ]) {

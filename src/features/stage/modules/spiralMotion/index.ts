@@ -1,7 +1,11 @@
 export { SpiralMotionModule } from "./SpiralMotionModule"
 export type {
+  SpiralMotionInstance,
+  SpiralMotionInstanceTransform,
+  SpiralMotionPathSample,
   SpiralMotionSample,
   SpiralMotionSettings,
-  SpiralMotionState,
-  SpiralMotionTransform,
+  SpiralMotionRuntimeState,
+  SpiralMotionUpdateResult,
+  SpiralMotionWorldSize,
 } from "./spiralMotionTypes"

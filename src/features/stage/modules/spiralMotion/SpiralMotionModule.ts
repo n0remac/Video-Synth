@@ -4,14 +4,16 @@ import type { ShapeVector3 } from "@/features/shapeGenerator/shapeGeneratorTypes
 import type { StageModule } from "@/features/stage/stageTypes"
 import type { VisualCvRouteSignal } from "@/features/visualCv/visualCvTypes"
 import {
-  createSpiralMotionState,
-  getSpiralTransform,
-  sampleSpiralPath,
-  updateSpiralMotionState,
+  createSpiralMotionRuntimeState,
+  getSpiralInstanceTransforms,
+  getSpiralSpawnCycleProgress,
+  sampleSpiralPaths,
+  updateSpiralMotionRuntimeState,
 } from "./spiralMotionLogic"
 import type {
-  SpiralMotionState,
-  SpiralMotionTransform,
+  SpiralMotionInstanceTransform,
+  SpiralMotionRuntimeState,
+  SpiralMotionWorldSize,
 } from "./spiralMotionTypes"
 import {
   applySpiralPathToLine,
@@ -22,6 +24,7 @@ import {
 
 type SpiralMotionModuleOptions = {
   scene: THREE.Scene
+  world: SpiralMotionWorldSize
 }
 
 export class SpiralMotionModule implements StageModule {
@@ -33,14 +36,11 @@ export class SpiralMotionModule implements StageModule {
 
   private routeSignalsByInstanceId = new Map<string, VisualCvRouteSignal>()
 
-  private statesByInstanceId = new Map<string, SpiralMotionState>()
+  private statesByInstanceId = new Map<string, SpiralMotionRuntimeState>()
 
-  private pathLine: SpiralPathLine
+  private pathLines: SpiralPathLine[] = []
 
-  constructor(private options: SpiralMotionModuleOptions) {
-    this.pathLine = createSpiralPathLine()
-    this.options.scene.add(this.pathLine)
-  }
+  constructor(private options: SpiralMotionModuleOptions) {}
 
   receiveAudioSettings(audioInstanceId: string, settings: AudioCircleSettings) {
     const previousSettings = this.audioSettingsByInstanceId.get(audioInstanceId)
@@ -51,11 +51,11 @@ export class SpiralMotionModule implements StageModule {
       previousSettings?.centerShape.positionMode !==
         settings.centerShape.positionMode ||
       JSON.stringify(previousSettings?.centerShape.spiralMotion) !==
-      JSON.stringify(settings.centerShape.spiralMotion)
+        JSON.stringify(settings.centerShape.spiralMotion)
     ) {
       this.statesByInstanceId.set(
         audioInstanceId,
-        createSpiralMotionState(settings.centerShape.spiralMotion),
+        createSpiralMotionRuntimeState(),
       )
     }
 
@@ -94,68 +94,67 @@ export class SpiralMotionModule implements StageModule {
       ? this.audioSettingsByInstanceId.get(audioInstanceId)
       : null
 
-    if (!audioInstanceId || !settings?.centerShape.enabled) {
-      this.pathLine.visible = false
+    if (
+      !audioInstanceId ||
+      !settings?.centerShape.enabled ||
+      settings.centerShape.positionMode !== "spiral" ||
+      !settings.centerShape.spiralMotion.enabled
+    ) {
+      this.hidePathLines()
       return
     }
 
-    const spiralSettings = settings.centerShape.spiralMotion
-    const state = this.getState(audioInstanceId, settings)
+    const state = this.getState(audioInstanceId)
+    const signal = this.routeSignalsByInstanceId.get(audioInstanceId) ?? null
+    const result = updateSpiralMotionRuntimeState({
+      dt,
+      settings: settings.centerShape.spiralMotion,
+      signal,
+      state,
+    })
 
-    if (
-      settings.centerShape.positionMode === "spiral" &&
-      spiralSettings.enabled
-    ) {
-      const signal = this.routeSignalsByInstanceId.get(audioInstanceId) ?? null
-
-      this.statesByInstanceId.set(
-        audioInstanceId,
-        updateSpiralMotionState({
-          dt,
-          settings: spiralSettings,
-          signal,
-          state,
-        }),
-      )
-    }
-
+    this.statesByInstanceId.set(audioInstanceId, result.state)
     this.syncPath()
   }
 
-  getTransform(
+  getInstanceTransforms(
     audioInstanceId: string,
     origin: ShapeVector3,
-  ): SpiralMotionTransform | null {
+  ): SpiralMotionInstanceTransform[] {
     const settings = this.audioSettingsByInstanceId.get(audioInstanceId)
 
-    if (!settings || settings.centerShape.positionMode !== "spiral") {
-      return null
+    if (
+      !settings ||
+      settings.centerShape.positionMode !== "spiral" ||
+      !settings.centerShape.spiralMotion.enabled
+    ) {
+      return []
     }
 
-    const spiralSettings = settings.centerShape.spiralMotion
-
-    if (!spiralSettings.enabled) {
-      return {
-        position: { ...origin },
-        phaseDegrees: spiralSettings.startPhaseDegrees,
-        progress: 0,
-        radius: 0,
-        zOffset: 0,
-        frequencyHz: 0,
-      }
-    }
-
-    return getSpiralTransform({
+    return getSpiralInstanceTransforms({
       origin,
-      settings: spiralSettings,
+      settings: settings.centerShape.spiralMotion,
       signal: this.routeSignalsByInstanceId.get(audioInstanceId) ?? null,
-      state: this.getState(audioInstanceId, settings),
+      state: this.getState(audioInstanceId),
+      world: this.options.world,
     })
   }
 
+  getSpawnCycleProgress(audioInstanceId: string) {
+    const settings = this.audioSettingsByInstanceId.get(audioInstanceId)
+
+    if (!settings) {
+      return 0
+    }
+
+    return getSpiralSpawnCycleProgress(
+      settings.centerShape.spiralMotion,
+      this.getState(audioInstanceId),
+    )
+  }
+
   dispose() {
-    this.options.scene.remove(this.pathLine)
-    disposeSpiralPathLine(this.pathLine)
+    this.clearPathLines()
     this.statesByInstanceId.clear()
     this.audioSettingsByInstanceId.clear()
     this.routeSignalsByInstanceId.clear()
@@ -171,17 +170,14 @@ export class SpiralMotionModule implements StageModule {
     return null
   }
 
-  private getState(
-    audioInstanceId: string,
-    settings: AudioCircleSettings,
-  ): SpiralMotionState {
+  private getState(audioInstanceId: string): SpiralMotionRuntimeState {
     const existingState = this.statesByInstanceId.get(audioInstanceId)
 
     if (existingState) {
       return existingState
     }
 
-    const state = createSpiralMotionState(settings.centerShape.spiralMotion)
+    const state = createSpiralMotionRuntimeState()
 
     this.statesByInstanceId.set(audioInstanceId, state)
 
@@ -201,21 +197,56 @@ export class SpiralMotionModule implements StageModule {
       !settings.centerShape.spiralMotion.enabled ||
       !settings.centerShape.spiralMotion.visualize
     ) {
-      this.pathLine.visible = false
+      this.hidePathLines()
       return
     }
 
-    const state = this.getState(audioInstanceId, settings)
+    const state = this.getState(audioInstanceId)
     const signal = this.routeSignalsByInstanceId.get(audioInstanceId) ?? null
     const frequencyHz = state.lastFrequencyHz || signal?.frequencyHz || 1
-    const samples = sampleSpiralPath({
+    const pathSamples = sampleSpiralPaths({
       frequencyHz,
       origin: settings.centerShape.position,
       settings: settings.centerShape.spiralMotion,
       signal,
+      world: this.options.world,
     })
 
-    applySpiralPathToLine(this.pathLine, samples)
-    this.pathLine.visible = true
+    this.ensurePathLineCount(pathSamples.length)
+
+    pathSamples.forEach((pathSample, index) => {
+      const line = this.pathLines[index]
+
+      applySpiralPathToLine(line, pathSample.samples)
+      line.visible = true
+    })
+
+    for (let index = pathSamples.length; index < this.pathLines.length; index += 1) {
+      this.pathLines[index].visible = false
+    }
+  }
+
+  private ensurePathLineCount(count: number) {
+    while (this.pathLines.length < count) {
+      const line = createSpiralPathLine()
+
+      this.pathLines.push(line)
+      this.options.scene.add(line)
+    }
+  }
+
+  private hidePathLines() {
+    this.pathLines.forEach((line) => {
+      line.visible = false
+    })
+  }
+
+  private clearPathLines() {
+    for (const line of this.pathLines) {
+      this.options.scene.remove(line)
+      disposeSpiralPathLine(line)
+    }
+
+    this.pathLines = []
   }
 }

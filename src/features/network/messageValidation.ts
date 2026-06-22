@@ -143,8 +143,23 @@ function isShapeSpiralMotionDirection(value: unknown) {
 }
 
 function isShapeSpiralMotionSettings(value: unknown) {
+  if (!isRecord(value)) {
+    return false
+  }
+
+  const pathCount =
+    value.pathCount === undefined
+      ? 1
+      : isFiniteNumber(value.pathCount) && Number.isInteger(value.pathCount)
+        ? value.pathCount
+        : NaN
+  const hasValidPathDuration =
+    (isFiniteNumber(value.pathDurationMs) && value.pathDurationMs >= 250) ||
+    (value.pathDurationMs === undefined &&
+      isFiniteNumber(value.resetMs) &&
+      value.resetMs >= 250)
+
   return (
-    isRecord(value) &&
     typeof value.enabled === "boolean" &&
     typeof value.visualize === "boolean" &&
     isFiniteNumber(value.startRadius) &&
@@ -154,14 +169,36 @@ function isShapeSpiralMotionSettings(value: unknown) {
     isFiniteNumber(value.radiusCvAmount) &&
     value.radiusCvAmount >= 0 &&
     value.radiusCvAmount <= 20 &&
+    (value.moveSource === undefined ||
+      isVisualCvModulationSource(value.moveSource)) &&
+    (value.moveRate === undefined ||
+      (isFiniteNumber(value.moveRate) &&
+        value.moveRate >= 0 &&
+        value.moveRate <= 20)) &&
     isFiniteNumber(value.degreesPerPulse) &&
     value.degreesPerPulse >= 0 &&
     value.degreesPerPulse <= 3600 &&
     isFiniteNumber(value.depthPerPulse) &&
     value.depthPerPulse >= 0 &&
     value.depthPerPulse <= 100 &&
-    isFiniteNumber(value.resetMs) &&
-    value.resetMs >= 250 &&
+    hasValidPathDuration &&
+    pathCount >= 1 &&
+    pathCount <= 64 &&
+    (value.spawnSource === undefined ||
+      isVisualCvModulationSource(value.spawnSource)) &&
+    (value.spawnRateHz === undefined ||
+      (isFiniteNumber(value.spawnRateHz) &&
+        value.spawnRateHz >= 0 &&
+        value.spawnRateHz <= 20)) &&
+    (value.maxActiveShapes === undefined ||
+      (isFiniteNumber(value.maxActiveShapes) &&
+        Number.isInteger(value.maxActiveShapes) &&
+        value.maxActiveShapes >= pathCount &&
+        value.maxActiveShapes <= 512)) &&
+    (value.edgePadding === undefined ||
+      (isFiniteNumber(value.edgePadding) &&
+        value.edgePadding >= 0 &&
+        value.edgePadding <= 0.5)) &&
     isShapeSpiralMotionDirection(value.direction) &&
     isFiniteNumber(value.startPhaseDegrees) &&
     value.startPhaseDegrees >= -3600 &&
