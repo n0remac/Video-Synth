@@ -220,20 +220,13 @@ function createSolidShape(
   return group
 }
 
-function create2DShape({
-  parameters,
-  color = 0x00d1ff,
-}: {
-  parameters: ShapeParameters
-  color?: THREE.ColorRepresentation
-}): THREE.Object3D {
+function create2DShapeGeometryParts(parameters: ShapeParameters) {
   const {
     angleBias,
     sideVariation,
     sides,
     size,
   } = parameters
-  const group = new THREE.Group()
   const polygonPoints = createPolygonPoints({
     angleBias,
     radius: size,
@@ -242,6 +235,22 @@ function create2DShape({
   })
   const shape = createPolygonShape(polygonPoints)
   const fillGeometry = new THREE.ShapeGeometry(shape)
+
+  return {
+    fillGeometry,
+    polygonPoints,
+  }
+}
+
+function create2DShape({
+  parameters,
+  color = 0x00d1ff,
+}: {
+  parameters: ShapeParameters
+  color?: THREE.ColorRepresentation
+}): THREE.Object3D {
+  const group = new THREE.Group()
+  const { fillGeometry, polygonPoints } = create2DShapeGeometryParts(parameters)
   const fillMaterial = markShapeFillMaterial(
     new THREE.MeshBasicMaterial({
       color,
@@ -373,13 +382,7 @@ function applySphericalVariation(
   position.needsUpdate = true
 }
 
-function createPrismShape({
-  parameters,
-  color,
-}: {
-  parameters: ShapeParameters
-  color?: THREE.ColorRepresentation
-}): THREE.Object3D {
+function createPrismGeometry(parameters: ShapeParameters) {
   const {
     angleBias,
     bevel,
@@ -411,16 +414,22 @@ function createPrismShape({
   geometry.center()
   geometry.computeVertexNormals()
 
-  return createSolidShape(geometry, { color })
+  return geometry
 }
 
-function createPyramidShape({
+function createPrismShape({
   parameters,
-  color = 0xff8f3c,
+  color,
 }: {
   parameters: ShapeParameters
   color?: THREE.ColorRepresentation
 }): THREE.Object3D {
+  const geometry = createPrismGeometry(parameters)
+
+  return createSolidShape(geometry, { color })
+}
+
+function createPyramidGeometry(parameters: ShapeParameters) {
   const {
     angleBias,
     depth,
@@ -460,16 +469,22 @@ function createPyramidShape({
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
 
-  return createSolidShape(geometry, { color })
+  return geometry
 }
 
-function createSphereShape({
+function createPyramidShape({
   parameters,
-  color = 0x8ee6ff,
+  color = 0xff8f3c,
 }: {
   parameters: ShapeParameters
   color?: THREE.ColorRepresentation
 }): THREE.Object3D {
+  const geometry = createPyramidGeometry(parameters)
+
+  return createSolidShape(geometry, { color })
+}
+
+function createSphereFillGeometry(parameters: ShapeParameters) {
   const {
     depth,
     sideVariation,
@@ -485,6 +500,18 @@ function createSphereShape({
   applySphericalVariation(geometry, sideVariation)
   applyCenteredDepthTaperAndTwist(geometry, depth, taper, twist)
   geometry.computeVertexNormals()
+
+  return geometry
+}
+
+function createSphereShape({
+  parameters,
+  color = 0x8ee6ff,
+}: {
+  parameters: ShapeParameters
+  color?: THREE.ColorRepresentation
+}): THREE.Object3D {
+  const geometry = createSphereFillGeometry(parameters)
 
   return createSolidShape(geometry, { color, edgeStyle: "wire" })
 }
@@ -506,13 +533,7 @@ function createPolyhedronGeometry(sides: number, size: number) {
   }
 }
 
-function createPolyhedronShape({
-  parameters,
-  color = 0x3cff9e,
-}: {
-  parameters: ShapeParameters
-  color?: THREE.ColorRepresentation
-}): THREE.Object3D {
+function createPolyhedronFillGeometry(parameters: ShapeParameters) {
   const {
     depth,
     sides,
@@ -525,7 +546,51 @@ function createPolyhedronShape({
   applyCenteredDepthTaperAndTwist(geometry, depth, taper, twist)
   geometry.computeVertexNormals()
 
+  return geometry
+}
+
+function createPolyhedronShape({
+  parameters,
+  color = 0x3cff9e,
+}: {
+  parameters: ShapeParameters
+  color?: THREE.ColorRepresentation
+}): THREE.Object3D {
+  const geometry = createPolyhedronFillGeometry(parameters)
+
   return createSolidShape(geometry, { color })
+}
+
+function create3DShapeFillGeometry(
+  family: ShapeFamily,
+  parameters: ShapeParameters,
+) {
+  switch (family) {
+    case "prism":
+      return createPrismGeometry(parameters)
+    case "pyramid":
+      return createPyramidGeometry(parameters)
+    case "sphere":
+      return createSphereFillGeometry(parameters)
+    case "polyhedron":
+      return createPolyhedronFillGeometry(parameters)
+    default:
+      return createPrismGeometry(parameters)
+  }
+}
+
+export function createShapeFillGeometry({
+  family,
+  parameters,
+  mode,
+}: {
+  family: ShapeFamily
+  parameters: ShapeParameters
+  mode: ShapeMode
+}) {
+  return mode === "2d"
+    ? create2DShapeGeometryParts(parameters).fillGeometry
+    : create3DShapeFillGeometry(family, parameters)
 }
 
 function create3DShape(

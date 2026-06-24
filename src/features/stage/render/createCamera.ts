@@ -24,8 +24,12 @@ export function createCamera(worldHeight: number) {
 export function resizeCameraToViewport(
   camera: THREE.PerspectiveCamera,
   worldHeight: number,
+  viewport: {
+    width: number
+    height: number
+  },
 ) {
-  const aspect = window.innerWidth / window.innerHeight
+  const aspect = viewport.width / Math.max(viewport.height, 1)
   const worldWidth = worldHeight * aspect
 
   camera.aspect = aspect

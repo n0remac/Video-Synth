@@ -5,7 +5,16 @@ export type AnimationLoopHandle = {
 export function startAnimationLoop(onFrame: (dt: number) => void) {
   let running = true
   let previousTime = performance.now()
-  let frameId = 0
+  let frameId: number | ReturnType<typeof setTimeout> = 0
+  const requestFrame =
+    typeof requestAnimationFrame === "function"
+      ? requestAnimationFrame
+      : (callback: FrameRequestCallback) =>
+          setTimeout(() => callback(performance.now()), 1000 / 60)
+  const cancelFrame =
+    typeof cancelAnimationFrame === "function"
+      ? cancelAnimationFrame
+      : clearTimeout
 
   function frame(time: number) {
     if (!running) {
@@ -15,15 +24,15 @@ export function startAnimationLoop(onFrame: (dt: number) => void) {
     const dt = Math.min((time - previousTime) / 1000, 0.05)
     previousTime = time
     onFrame(dt)
-    frameId = requestAnimationFrame(frame)
+    frameId = requestFrame(frame)
   }
 
-  frameId = requestAnimationFrame(frame)
+  frameId = requestFrame(frame)
 
   return {
     stop() {
       running = false
-      cancelAnimationFrame(frameId)
+      cancelFrame(frameId as number)
     },
   } satisfies AnimationLoopHandle
 }

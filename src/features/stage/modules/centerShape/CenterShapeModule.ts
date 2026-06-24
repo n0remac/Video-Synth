@@ -15,11 +15,17 @@ import {
   buildShape,
   clearGroup,
   clamp,
+  createShapeFillGeometry,
   disposeObject,
   getNearestPolyhedronSideCount,
 } from "@/features/shapeGenerator/shapeGeneratorThree"
 import type { StageModule } from "@/features/stage/stageTypes"
 import type { SpiralMotionModule } from "../spiralMotion"
+import {
+  getSpiralGeometryParameters,
+  getSpiralGeometrySignature,
+  getSpiralInstanceScale,
+} from "./centerShapeGeometryLogic"
 
 type CenterShapeModuleOptions = {
   scene: THREE.Scene
@@ -37,7 +43,19 @@ type ContinuousMotionState = {
   offset: number
 }
 
+type SpiralShapeBatch = {
+  capacity: number
+  color: string
+  fill: THREE.InstancedMesh
+  fillMaterial: THREE.MeshBasicMaterial | THREE.MeshStandardMaterial
+  geometry: THREE.BufferGeometry
+  signature: string
+  wire: THREE.InstancedMesh
+  wireMaterial: THREE.MeshBasicMaterial
+}
+
 const stageShapeScale = 0.22
+const spiralGeometryCacheLimit = 32
 
 const positionControlNames: ShapeControlName[] = [
   "positionX",
@@ -217,7 +235,7 @@ function getEffectiveColor(
   return `#${new THREE.Color(shape.color).offsetHSL(hueOffset / 360, 0, 0).getHexString()}`
 }
 
-type EffectiveShape = ReturnType<typeof getEffectiveShape>
+export type EffectiveShape = ReturnType<typeof getEffectiveShape>
 
 function toRadians(degrees: number) {
   return (degrees / 180) * Math.PI
@@ -233,12 +251,16 @@ function applyShapeTransform(shapeObject: THREE.Object3D, shape: EffectiveShape)
   )
 }
 
-function getGeometrySignature(shape: EffectiveShape) {
+function getManualGeometrySignature(shape: EffectiveShape) {
   return JSON.stringify({
     family: shape.family,
     mode: shape.mode,
     parameters: shape.parameters,
   })
+}
+
+function getSpiralBatchCapacity(requiredCount: number) {
+  return Math.max(Math.ceil(Math.max(requiredCount, 1) / 32) * 32, 32)
 }
 
 function getTransformSignature(shape: EffectiveShape) {
@@ -278,7 +300,9 @@ export class CenterShapeModule implements StageModule {
 
   private shapeObject: THREE.Object3D | null = null
 
-  private spiralShapeObjects = new Map<string, THREE.Object3D>()
+  private spiralShapeBatch: SpiralShapeBatch | null = null
+
+  private spiralGeometryCache = new Map<string, THREE.BufferGeometry>()
 
   private renderedGeometrySignature = ""
 
@@ -360,6 +384,7 @@ export class CenterShapeModule implements StageModule {
 
   dispose() {
     this.clearShape()
+    this.clearSpiralGeometryCache()
     this.options.scene.remove(this.root, ...this.lights)
     this.lights = []
   }
@@ -475,7 +500,6 @@ export class CenterShapeModule implements StageModule {
       signal,
       this.getContinuousMotionOffsets(),
     )
-    const geometrySignature = getGeometrySignature(effectiveShape)
 
     if (
       settings.centerShape.positionMode === "spiral" &&
@@ -485,13 +509,13 @@ export class CenterShapeModule implements StageModule {
       this.syncSpiralShapes({
         audioInstanceId: this.activeAudioInstanceId,
         effectiveShape,
-        geometrySignature,
+        geometrySignature: getSpiralGeometrySignature(effectiveShape),
         origin: settings.centerShape.position,
       })
       return
     }
 
-    this.syncManualShape(effectiveShape, geometrySignature)
+    this.syncManualShape(effectiveShape, getManualGeometrySignature(effectiveShape))
   }
 
   private syncManualShape(
@@ -539,40 +563,147 @@ export class CenterShapeModule implements StageModule {
   }) {
     this.clearManualShape()
 
-    if (geometrySignature !== this.renderedGeometrySignature) {
-      this.clearSpiralShapes()
-      this.renderedGeometrySignature = geometrySignature
-    }
-
     const transforms = this.options.spiralMotion.getInstanceTransforms(
       audioInstanceId,
       origin,
     )
-    const liveIds = new Set(transforms.map((transform) => transform.id))
+    const batch = this.ensureSpiralShapeBatch(
+      effectiveShape,
+      geometrySignature,
+      transforms.length,
+    )
+    const rotation = new THREE.Euler(
+      toRadians(effectiveShape.rotation.x),
+      toRadians(effectiveShape.rotation.y),
+      toRadians(effectiveShape.rotation.z),
+    )
+    const quaternion = new THREE.Quaternion().setFromEuler(rotation)
+    const sizeScale = getSpiralInstanceScale(effectiveShape)
+    const scale = new THREE.Vector3(
+      stageShapeScale * sizeScale.x,
+      stageShapeScale * sizeScale.y,
+      stageShapeScale * sizeScale.z,
+    )
+    const position = new THREE.Vector3()
+    const matrix = new THREE.Matrix4()
 
-    for (const [id, shapeObject] of this.spiralShapeObjects) {
-      if (!liveIds.has(id)) {
-        this.root.remove(shapeObject)
-        disposeObject(shapeObject)
-        this.spiralShapeObjects.delete(id)
-      }
+    if (batch.color !== effectiveShape.color) {
+      batch.fillMaterial.color.set(effectiveShape.color)
+      batch.color = effectiveShape.color
     }
 
-    for (const transform of transforms) {
+    transforms.forEach((transform, index) => {
       const shape = withShapePosition(effectiveShape, transform.position)
-      let shapeObject = this.spiralShapeObjects.get(transform.id)
+      position.set(shape.position.x, shape.position.y, shape.position.z)
+      matrix.compose(position, quaternion, scale)
+      batch.fill.setMatrixAt(index, matrix)
+      batch.wire.setMatrixAt(index, matrix)
+    })
 
-      if (!shapeObject) {
-        shapeObject = buildShape(shape)
-        this.spiralShapeObjects.set(transform.id, shapeObject)
-        this.root.add(shapeObject)
-      }
-
-      applyShapeColor(shapeObject, shape.color)
-      applyShapeTransform(shapeObject, shape)
-    }
+    batch.fill.count = transforms.length
+    batch.wire.count = transforms.length
+    batch.fill.instanceMatrix.needsUpdate = true
+    batch.wire.instanceMatrix.needsUpdate = true
+    batch.fill.computeBoundingSphere()
+    batch.wire.computeBoundingSphere()
+    this.renderedGeometrySignature = geometrySignature
 
     this.renderedTransformSignature = ""
+  }
+
+  private ensureSpiralShapeBatch(
+    shape: EffectiveShape,
+    geometrySignature: string,
+    requiredCount: number,
+  ) {
+    const capacity = getSpiralBatchCapacity(requiredCount)
+
+    if (
+      this.spiralShapeBatch &&
+      this.spiralShapeBatch.signature === geometrySignature &&
+      this.spiralShapeBatch.capacity >= requiredCount
+    ) {
+      return this.spiralShapeBatch
+    }
+
+    this.disposeSpiralShapeBatch()
+
+    const geometry = this.getCachedSpiralGeometry(geometrySignature, shape)
+    const fillMaterial =
+      shape.mode === "2d"
+        ? new THREE.MeshBasicMaterial({
+            color: shape.color,
+            side: THREE.DoubleSide,
+          })
+        : new THREE.MeshStandardMaterial({
+            color: shape.color,
+            metalness: 0.18,
+            roughness: 0.48,
+          })
+    const wireMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      opacity: shape.mode === "2d" ? 0.48 : 0.38,
+      transparent: true,
+      wireframe: true,
+    })
+    const fill = new THREE.InstancedMesh(geometry, fillMaterial, capacity)
+    const wire = new THREE.InstancedMesh(geometry, wireMaterial, capacity)
+
+    fill.frustumCulled = false
+    wire.frustumCulled = false
+    wire.renderOrder = 5
+    this.root.add(fill, wire)
+
+    this.spiralShapeBatch = {
+      capacity,
+      color: shape.color,
+      fill,
+      fillMaterial,
+      geometry,
+      signature: geometrySignature,
+      wire,
+      wireMaterial,
+    }
+
+    return this.spiralShapeBatch
+  }
+
+  private getCachedSpiralGeometry(
+    geometrySignature: string,
+    shape: EffectiveShape,
+  ) {
+    const existingGeometry = this.spiralGeometryCache.get(geometrySignature)
+
+    if (existingGeometry) {
+      this.spiralGeometryCache.delete(geometrySignature)
+      this.spiralGeometryCache.set(geometrySignature, existingGeometry)
+      return existingGeometry
+    }
+
+    const geometry = createShapeFillGeometry({
+      family: shape.family,
+      mode: shape.mode,
+      parameters: getSpiralGeometryParameters(shape),
+    })
+
+    this.spiralGeometryCache.set(geometrySignature, geometry)
+    this.pruneSpiralGeometryCache(geometrySignature)
+
+    return geometry
+  }
+
+  private pruneSpiralGeometryCache(activeSignature: string) {
+    while (this.spiralGeometryCache.size > spiralGeometryCacheLimit) {
+      const oldestSignature = this.spiralGeometryCache.keys().next().value
+
+      if (!oldestSignature || oldestSignature === activeSignature) {
+        return
+      }
+
+      const geometry = this.spiralGeometryCache.get(oldestSignature)
+      this.spiralGeometryCache.delete(oldestSignature)
+      geometry?.dispose()
+    }
   }
 
   private clearShape() {
@@ -594,11 +725,25 @@ export class CenterShapeModule implements StageModule {
   }
 
   private clearSpiralShapes() {
-    for (const shapeObject of this.spiralShapeObjects.values()) {
-      this.root.remove(shapeObject)
-      disposeObject(shapeObject)
+    this.disposeSpiralShapeBatch()
+  }
+
+  private disposeSpiralShapeBatch() {
+    if (!this.spiralShapeBatch) {
+      return
     }
 
-    this.spiralShapeObjects.clear()
+    this.root.remove(this.spiralShapeBatch.fill, this.spiralShapeBatch.wire)
+    this.spiralShapeBatch.fillMaterial.dispose()
+    this.spiralShapeBatch.wireMaterial.dispose()
+    this.spiralShapeBatch = null
+  }
+
+  private clearSpiralGeometryCache() {
+    for (const geometry of this.spiralGeometryCache.values()) {
+      geometry.dispose()
+    }
+
+    this.spiralGeometryCache.clear()
   }
 }

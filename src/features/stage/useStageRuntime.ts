@@ -1,7 +1,6 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import * as THREE from "three"
 import { createStageAudioFrameMessage } from "@/features/network/protocol"
 import { parseVisualizerMessage } from "@/features/network/messageValidation"
 import type {
@@ -19,31 +18,16 @@ import {
 } from "@/features/controller/audio/audioRoutingLogic"
 import type { AudioRouteFollowerState } from "@/features/controller/audio/audioRoutingLogic"
 import {
-  defaultTriggeredCircleRouting,
-  defaultVisualCvSettings,
-} from "@/features/visualCv/visualCvDefaults"
-import {
-  createRoutedAudioRouteSignal,
-  getVisualCvModulationValue,
-  isVisualCvTriggerActive,
-  updateVisualCvRouteSignal,
-} from "@/features/visualCv/visualCvLogic"
-import type { VisualCvRouteState } from "@/features/visualCv/visualCvLogic"
-import {
   getFrameAtTime,
 } from "@/features/songs/songAnalysisLogic"
 import type { SongAnalysis } from "@/features/songs/songTypes"
 import { normalizeAudioControlledShapeSettings } from "@/features/shapeGenerator/shapeGeneratorTypes"
 import { stageConfig } from "./stageConfig"
-import { createCamera, resizeCameraToViewport } from "./render/createCamera"
-import { startAnimationLoop } from "./render/animationLoop"
-import { createRenderer } from "./render/createRenderer"
-import { createScene } from "./render/createScene"
-import { ColorControlModule } from "./modules/colorControl"
-import { CenterShapeModule } from "./modules/centerShape"
-import { RipplePaintModule } from "./modules/ripplePaint"
-import { SpiralMotionModule } from "./modules/spiralMotion"
-import { TrailPaintModule } from "./modules/trailPaint"
+import {
+  createStageRenderBridge,
+  type StageRenderBridge,
+} from "./render/stageRenderBridge"
+import type { StageRenderViewport } from "./render/stageRenderProtocol"
 
 type ConnectionStatus = "connecting" | "connected" | "disconnected"
 
@@ -55,7 +39,7 @@ const idleSongTransport: SongTransportUpdateMessage = {
   timestamp: 0,
 }
 
-type PointerWorld = {
+type PointerCanvas = {
   x: number
   y: number
 }
@@ -65,62 +49,57 @@ export type StageAudioRouteConfig = {
   settings: AudioCircleSettings
 }
 
-function messageToRippleInput(
-  message: PointerMessage,
-  world: { worldWidth: number; worldHeight: number },
-  color: string,
-) {
-  return {
-    id: `${message.userId}-${message.timestamp}-${Math.random().toString(36).slice(2, 7)}`,
-    userId: message.userId,
-    x: (message.x - 0.5) * world.worldWidth,
-    y: (0.5 - message.y) * world.worldHeight,
-    speed: message.speed,
-    color,
-  }
-}
-
-function messageToTrailInput(
-  message: PointerMessage,
-  world: { worldWidth: number; worldHeight: number },
-  color: string,
-) {
-  return {
-    userId: message.userId,
-    x: (message.x - 0.5) * world.worldWidth,
-    y: (0.5 - message.y) * world.worldHeight,
-    vx: message.vx * world.worldWidth,
-    vy: -message.vy * world.worldHeight,
-    color,
-    down: message.down,
-    lineCount: message.trailLineCount,
-    trailLength: message.trailLength,
-  }
-}
-
-function getPointerWorld(
+function getPointerCanvas(
   event: PointerEvent,
   canvas: HTMLCanvasElement,
-  world: { worldWidth: number; worldHeight: number },
-): PointerWorld {
+): PointerCanvas {
   const rect = canvas.getBoundingClientRect()
   const x = (event.clientX - rect.left) / rect.width
   const y = (event.clientY - rect.top) / rect.height
 
+  return { x, y }
+}
+
+function getStageViewport(canvas: HTMLCanvasElement): StageRenderViewport {
   return {
-    x: (x - 0.5) * world.worldWidth,
-    y: (0.5 - y) * world.worldHeight,
+    width: Math.max(canvas.clientWidth || window.innerWidth, 1),
+    height: Math.max(canvas.clientHeight || window.innerHeight, 1),
+    pixelRatio: window.devicePixelRatio || 1,
+  }
+}
+
+function createLocalPointerMessage({
+  point,
+  previousPoint,
+  speed,
+}: {
+  point: PointerCanvas
+  previousPoint: PointerCanvas | null
+  speed: number
+}): PointerMessage {
+  return {
+    type: "pointer",
+    userId: "stage-local",
+    userRole: "stage",
+    x: point.x,
+    y: point.y,
+    vx: previousPoint ? point.x - previousPoint.x : 0,
+    vy: previousPoint ? point.y - previousPoint.y : 0,
+    speed,
+    down: true,
+    color: "#ffffff",
+    visualMode: "circle",
+    trailLineCount: 1,
+    trailLength: 1,
+    timestamp: performance.now(),
   }
 }
 
 export function useStageRuntime() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const socketRef = useRef<WebSocket | null>(null)
-  const audioFrameHandlerRef = useRef<((frame: AudioAnalysisFrame) => void) | null>(
-    null,
-  )
+  const renderBridgeRef = useRef<StageRenderBridge | null>(null)
   const audioRouteSettingsRef = useRef(new Map<string, AudioCircleSettings>())
-  const visualCvRouteStatesRef = useRef(new Map<string, VisualCvRouteState>())
   const songAnalysisRef = useRef<SongAnalysis | null>(null)
   const songAudioRef = useRef<HTMLAudioElement | null>(null)
   const songAnimationFrameRef = useRef<number | null>(null)
@@ -137,7 +116,7 @@ export function useStageRuntime() {
     useState<SongTransportUpdateMessage>(idleSongTransport)
 
   const sendAudioFrame = useCallback((frame: AudioAnalysisFrame) => {
-    audioFrameHandlerRef.current?.(frame)
+    renderBridgeRef.current?.receiveAudioFrame(frame)
 
     const socket = socketRef.current
 
@@ -184,7 +163,7 @@ export function useStageRuntime() {
 
   const resetSongRouteState = useCallback(() => {
     songRouteStatesRef.current.clear()
-    visualCvRouteStatesRef.current.clear()
+    renderBridgeRef.current?.resetVisualCvRouteStates()
     songSequenceRef.current = 0
   }, [])
 
@@ -479,100 +458,20 @@ export function useStageRuntime() {
     }
 
     const activeCanvas = canvas
-    const renderer = createRenderer(activeCanvas)
-    const scene = createScene()
-    scene.background = new THREE.Color(stageConfig.backgroundColor)
-    const camera = createCamera(stageConfig.worldHeight)
-    const world = resizeCameraToViewport(camera, stageConfig.worldHeight)
-    const colorControl = new ColorControlModule()
-    const spiralMotion = new SpiralMotionModule({ scene, world })
-    const centerShape = new CenterShapeModule({ scene, spiralMotion })
-    const ripplePaint = new RipplePaintModule({
-      scene,
-      maxRipples: stageConfig.maxRipples,
+    const renderBridge = createStageRenderBridge({
+      canvas: activeCanvas,
+      config: stageConfig,
+      ...getStageViewport(activeCanvas),
+      onError: (error) => {
+        console.error(error)
+      },
+      onReady: (mode) => {
+        console.info(`Stage renderer ready (${mode})`)
+      },
     })
-    const trailPaint = new TrailPaintModule({ scene })
-    let localPointerPrevious: PointerWorld | null = null
+    let localPointerPrevious: PointerCanvas | null = null
 
-    audioFrameHandlerRef.current = (frame) => {
-      frame.routes?.forEach((routeSignal: AudioRouteSignal) => {
-        const settings = audioRouteSettingsRef.current.get(
-          routeSignal.audioInstanceId,
-        )
-
-        if (!settings) {
-          return
-        }
-
-        const visualCvResult = updateVisualCvRouteSignal({
-          routeSignal,
-          settings: settings.visualCv ?? defaultVisualCvSettings,
-          state:
-            visualCvRouteStatesRef.current.get(routeSignal.audioInstanceId) ??
-            null,
-          timestamp: frame.timestamp,
-        })
-        const visualCvSignal = visualCvResult.signal
-        const circleRouting =
-          settings.triggeredCircles ?? defaultTriggeredCircleRouting
-        const routedRouteSignal = createRoutedAudioRouteSignal({
-          routeSignal,
-          routing: circleRouting,
-          visualCvSignal,
-        })
-
-        visualCvRouteStatesRef.current.set(
-          routeSignal.audioInstanceId,
-          visualCvResult.state,
-        )
-        spiralMotion.receiveVisualCvRouteSignal(visualCvSignal)
-        centerShape.receiveVisualCvRouteSignal(visualCvSignal)
-        ripplePaint.receiveAudioRouteSignal(routedRouteSignal)
-
-        if (!isVisualCvTriggerActive(visualCvSignal, circleRouting.triggerSource)) {
-          return
-        }
-
-        const level = getVisualCvModulationValue(
-          visualCvSignal,
-          circleRouting.sizeSource,
-        )
-        const riseAmount = getVisualCvModulationValue(
-          visualCvSignal,
-          circleRouting.growSource,
-        )
-        const fallAmount = getVisualCvModulationValue(
-          visualCvSignal,
-          circleRouting.releaseSource,
-        )
-        const hasAudioMotion =
-          settings.circleGrowOnRise === true ||
-          settings.circleFadeOnFall === true ||
-          settings.circleShrinkOnFall === true ||
-          settings.circleLevelControlsSize === true
-
-        ripplePaint.receiveInput({
-          id: `audio-${routeSignal.audioInstanceId}-${frame.timestamp}-${Math.random().toString(36).slice(2, 7)}`,
-          userId: routeSignal.audioInstanceId,
-          x: (Math.random() - 0.5) * world.worldWidth,
-          y: (0.5 - Math.random()) * world.worldHeight,
-          speed: level * 4,
-          color: settings.circleColor,
-          audioMotion: hasAudioMotion
-            ? {
-                audioInstanceId: routeSignal.audioInstanceId,
-                growOnRise: settings.circleGrowOnRise,
-                fadeOnFall: settings.circleFadeOnFall,
-                shrinkOnFall: settings.circleShrinkOnFall,
-                levelControlsSize: settings.circleLevelControlsSize,
-                level,
-                riseAmount,
-                fallAmount,
-              }
-            : undefined,
-        })
-      })
-    }
+    renderBridgeRef.current = renderBridge
 
     const socket = new WebSocket(getVisualizerSocketUrl("stage"))
     socketRef.current = socket
@@ -602,38 +501,16 @@ export function useStageRuntime() {
         return
       }
 
-      if (
-        message.type === "pointer" &&
-        message.visualMode === "circle" &&
-        message.down
-      ) {
-        const color = colorControl.resolveDrawColor(
-          message.userId,
-          message.color,
-          message.userRole,
-        )
-        ripplePaint.receiveInput(messageToRippleInput(message, world, color))
-      }
-
-      if (message.type === "pointer" && message.visualMode === "line") {
-        const color = colorControl.resolveDrawColor(
-          message.userId,
-          message.color,
-          message.userRole,
-        )
-        trailPaint.receiveInput(messageToTrailInput(message, world, color))
+      if (message.type === "pointer") {
+        renderBridge.receivePointer(message)
       }
 
       if (message.type === "color_control") {
-        colorControl.receiveInput(message)
-        scene.background = new THREE.Color(
-          colorControl.resolveBackgroundColor(stageConfig.backgroundColor),
-        )
+        renderBridge.receiveColorControl(message)
       }
 
       if (message.type === "clear_stage") {
-        ripplePaint.clear()
-        trailPaint.clear()
+        renderBridge.clear()
       }
 
       if (
@@ -664,12 +541,7 @@ export function useStageRuntime() {
             index === existingIndex ? nextRoute : route,
           )
         })
-        spiralMotion.receiveAudioSettings(
-          message.audioInstanceId,
-          normalizedSettings,
-        )
-        centerShape.receiveAudioSettings(message.audioInstanceId, normalizedSettings)
-        visualCvRouteStatesRef.current.delete(message.audioInstanceId)
+        renderBridge.receiveAudioSettings(message.audioInstanceId, normalizedSettings)
       }
 
       if (message.type === "audio_settings_delete") {
@@ -679,29 +551,26 @@ export function useStageRuntime() {
           ),
         )
         songRouteStatesRef.current.delete(message.audioInstanceId)
-        visualCvRouteStatesRef.current.delete(message.audioInstanceId)
-        spiralMotion.removeAudioInstance(message.audioInstanceId)
-        centerShape.removeAudioInstance(message.audioInstanceId)
+        renderBridge.removeAudioInstance(message.audioInstanceId)
       }
     })
 
     function handleResize() {
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-      renderer.setSize(window.innerWidth, window.innerHeight, false)
-      Object.assign(world, resizeCameraToViewport(camera, stageConfig.worldHeight))
+      renderBridge.resize(getStageViewport(activeCanvas))
     }
 
     function handlePointerDown(event: PointerEvent) {
       activeCanvas.setPointerCapture(event.pointerId)
-      localPointerPrevious = getPointerWorld(event, activeCanvas, world)
-      ripplePaint.receiveInput({
-        id: `stage-local-${performance.now()}`,
-        userId: "stage-local",
-        x: localPointerPrevious.x,
-        y: localPointerPrevious.y,
-        speed: 0,
-        color: "#ffffff",
-      })
+      const next = getPointerCanvas(event, activeCanvas)
+
+      renderBridge.receivePointer(
+        createLocalPointerMessage({
+          point: next,
+          previousPoint: localPointerPrevious,
+          speed: 0,
+        }),
+      )
+      localPointerPrevious = next
     }
 
     function handlePointerMove(event: PointerEvent) {
@@ -709,21 +578,20 @@ export function useStageRuntime() {
         return
       }
 
-      const next = getPointerWorld(event, activeCanvas, world)
+      const next = getPointerCanvas(event, activeCanvas)
       const speed = localPointerPrevious
         ? Math.hypot(next.x - localPointerPrevious.x, next.y - localPointerPrevious.y) *
           20
         : 0
 
+      renderBridge.receivePointer(
+        createLocalPointerMessage({
+          point: next,
+          previousPoint: localPointerPrevious,
+          speed,
+        }),
+      )
       localPointerPrevious = next
-      ripplePaint.receiveInput({
-        id: `stage-local-${performance.now()}`,
-        userId: "stage-local",
-        x: next.x,
-        y: next.y,
-        speed,
-        color: "#ffffff",
-      })
     }
 
     function handlePointerUp(event: PointerEvent) {
@@ -739,23 +607,10 @@ export function useStageRuntime() {
     activeCanvas.addEventListener("pointerup", handlePointerUp)
     activeCanvas.addEventListener("pointercancel", handlePointerUp)
 
-    const loop = startAnimationLoop((dt) => {
-      ripplePaint.update(dt)
-      trailPaint.update(dt)
-      spiralMotion.update(dt)
-      centerShape.update(dt)
-      colorControl.update()
-      scene.background = new THREE.Color(
-        colorControl.resolveBackgroundColor(stageConfig.backgroundColor),
-      )
-      renderer.render(scene, camera)
-    })
-
     return () => {
-      loop.stop()
-      audioFrameHandlerRef.current = null
       socket.close()
       socketRef.current = null
+      renderBridgeRef.current = null
       stopSongAnalysisLoop()
       songAudioRef.current?.pause()
       songAudioRef.current = null
@@ -764,12 +619,7 @@ export function useStageRuntime() {
       activeCanvas.removeEventListener("pointermove", handlePointerMove)
       activeCanvas.removeEventListener("pointerup", handlePointerUp)
       activeCanvas.removeEventListener("pointercancel", handlePointerUp)
-      colorControl.dispose()
-      centerShape.dispose()
-      spiralMotion.dispose()
-      ripplePaint.dispose()
-      trailPaint.dispose()
-      renderer.dispose()
+      renderBridge.dispose()
     }
   }, [])
 
