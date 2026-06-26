@@ -4,7 +4,9 @@ import {
   createSpiralMotionRuntimeState,
   getSpiralEffectiveRadiusScale,
   getSpiralInstanceTransforms,
+  getSpiralMovementAdvanceMs,
   getSpiralPathAnglesDegrees,
+  shouldResetSpiralMotionRuntime,
   updateSpiralMotionRuntimeState,
 } from "./spiralMotionLogic.ts"
 
@@ -150,6 +152,62 @@ test("spiral movement advances from selected pulse-synced source and move rate",
   })
 
   assert.equal(state.instances[0].ageMs, 1000)
+})
+
+test("spiral movement advance can be reused for music-synced transitions", () => {
+  assert.equal(
+    getSpiralMovementAdvanceMs({
+      dt: 1,
+      settings: baseSettings,
+      signal: createSignal({ frequencyHz: 2, syncSine: 1 }),
+    }),
+    2000,
+  )
+})
+
+test("spiral movement advance falls back to elapsed time only when requested", () => {
+  assert.equal(
+    getSpiralMovementAdvanceMs({
+      dt: 0.25,
+      fallbackToElapsed: true,
+      settings: baseSettings,
+      signal: null,
+    }),
+    250,
+  )
+  assert.equal(
+    getSpiralMovementAdvanceMs({
+      dt: 0.25,
+      settings: baseSettings,
+      signal: null,
+    }),
+    0,
+  )
+})
+
+test("spiral runtime reset ignores numeric movement-only setting changes", () => {
+  assert.equal(
+    shouldResetSpiralMotionRuntime({
+      previousSettings: baseSettings,
+      nextSettings: {
+        ...baseSettings,
+        moveRate: 2,
+        pathDurationMs: 8000,
+        spawnRateHz: 2,
+      },
+    }),
+    false,
+  )
+  assert.equal(
+    shouldResetSpiralMotionRuntime({
+      previousSettings: baseSettings,
+      nextSettings: {
+        ...baseSettings,
+        pathCount: 8,
+      },
+    }),
+    true,
+  )
 })
 
 test("spiral spawn scheduling advances from selected pulse-synced source", () => {

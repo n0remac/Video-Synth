@@ -198,14 +198,54 @@ function normalizeAudioSettings(settings: AudioCircleSettings): AudioCircleSetti
   }
 }
 
+function applyShapeModeTransitionBlend({
+  amount,
+  blended,
+  from,
+  to,
+}: {
+  amount: number
+  blended: AudioCircleSettings
+  from: AudioCircleSettings
+  to: AudioCircleSettings
+}): AudioCircleSettings {
+  const fromMode = from.centerShape.positionMode
+  const toMode = to.centerShape.positionMode
+
+  if (amount <= 0 || amount >= 1 || fromMode === toMode) {
+    return blended
+  }
+
+  return {
+    ...blended,
+    centerShape: {
+      ...blended.centerShape,
+      enabled: from.centerShape.enabled || to.centerShape.enabled,
+      positionMode: toMode,
+      spiralMotion: {
+        ...blended.centerShape.spiralMotion,
+        enabled:
+          from.centerShape.spiralMotion.enabled ||
+          to.centerShape.spiralMotion.enabled,
+      },
+    },
+  }
+}
+
 export function blendAudioSettings(
   from: AudioCircleSettings,
   to: AudioCircleSettings,
   progress: number,
 ): AudioCircleSettings {
   const amount = clamp(progress, 0, 1)
+  const blended = blendValue(from, to, amount) as AudioCircleSettings
 
   return normalizeAudioSettings(
-    blendValue(from, to, amount) as AudioCircleSettings,
+    applyShapeModeTransitionBlend({
+      amount,
+      blended,
+      from,
+      to,
+    }),
   )
 }

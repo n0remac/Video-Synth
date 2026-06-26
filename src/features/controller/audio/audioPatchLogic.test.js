@@ -242,3 +242,97 @@ test("fades full audio settings across spectrum, visual cv, and stage shape modu
   assert.equal(end.centerShape.parameters.sides, 24)
   assert.equal(isAudioCircleSettings(end), true)
 })
+
+test("patch fade starts manual to spiral shape transitions before fade end", () => {
+  const from = cloneSettings({
+    centerShape: {
+      ...validAudioSettings.centerShape,
+      enabled: true,
+      positionMode: "manual",
+      position: { x: 0, y: 0, z: 0 },
+      spiralMotion: {
+        ...validAudioSettings.centerShape.spiralMotion,
+        enabled: false,
+        moveRate: 0.25,
+        pathDurationMs: 8000,
+        pathCount: 4,
+      },
+    },
+  })
+  const to = cloneSettings({
+    centerShape: {
+      ...validAudioSettings.centerShape,
+      enabled: true,
+      positionMode: "spiral",
+      position: { x: 1, y: 0.5, z: -0.5 },
+      spiralMotion: {
+        ...validAudioSettings.centerShape.spiralMotion,
+        enabled: true,
+        moveRate: 2,
+        pathDurationMs: 2000,
+        pathCount: 12,
+      },
+    },
+  })
+
+  const middle = blendAudioSettings(from, to, 0.25)
+
+  assert.equal(middle.centerShape.enabled, true)
+  assert.equal(middle.centerShape.positionMode, "spiral")
+  assert.deepEqual(middle.centerShape.position, {
+    x: 0.25,
+    y: 0.125,
+    z: -0.125,
+  })
+  assert.equal(middle.centerShape.spiralMotion.enabled, true)
+  assert.equal(middle.centerShape.spiralMotion.moveRate, 0.6875)
+  assert.equal(middle.centerShape.spiralMotion.pathDurationMs, 6500)
+  assert.equal(middle.centerShape.spiralMotion.pathCount, 6)
+  assert.equal(isAudioCircleSettings(middle), true)
+})
+
+test("patch fade stops spiral spawning while stage-shape sliders continue fading", () => {
+  const from = cloneSettings({
+    centerShape: {
+      ...validAudioSettings.centerShape,
+      enabled: true,
+      positionMode: "spiral",
+      spiralMotion: {
+        ...validAudioSettings.centerShape.spiralMotion,
+        enabled: true,
+        moveRate: 3,
+        pathDurationMs: 3000,
+        pathCount: 10,
+      },
+    },
+  })
+  const to = cloneSettings({
+    centerShape: {
+      ...validAudioSettings.centerShape,
+      enabled: true,
+      positionMode: "manual",
+      position: { x: -0.5, y: 0.25, z: 0 },
+      spiralMotion: {
+        ...validAudioSettings.centerShape.spiralMotion,
+        enabled: false,
+        moveRate: 0.5,
+        pathDurationMs: 9000,
+        pathCount: 4,
+      },
+    },
+  })
+
+  const middle = blendAudioSettings(from, to, 0.25)
+
+  assert.equal(middle.centerShape.positionMode, "manual")
+  assert.deepEqual(middle.centerShape.position, {
+    x: -0.125,
+    y: 0.0625,
+    z: 0,
+  })
+  assert.equal(middle.centerShape.spiralMotion.enabled, true)
+  assert.equal(middle.centerShape.spiralMotion.moveRate, 2.375)
+  assert.equal(middle.centerShape.spiralMotion.pathDurationMs, 4500)
+  assert.equal(middle.centerShape.spiralMotion.pathCount, 9)
+  assert.equal(isAudioCircleSettings(middle), true)
+})

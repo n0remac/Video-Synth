@@ -5,9 +5,11 @@ import type { StageModule } from "@/features/stage/stageTypes"
 import type { VisualCvRouteSignal } from "@/features/visualCv/visualCvTypes"
 import {
   createSpiralMotionRuntimeState,
+  getSpiralInitialRingTransforms,
   getSpiralInstanceTransforms,
   getSpiralSpawnCycleProgress,
   sampleSpiralPaths,
+  shouldResetSpiralMotionRuntime,
   updateSpiralMotionRuntimeState,
 } from "./spiralMotionLogic"
 import type {
@@ -50,8 +52,10 @@ export class SpiralMotionModule implements StageModule {
     if (
       previousSettings?.centerShape.positionMode !==
         settings.centerShape.positionMode ||
-      JSON.stringify(previousSettings?.centerShape.spiralMotion) !==
-        JSON.stringify(settings.centerShape.spiralMotion)
+      shouldResetSpiralMotionRuntime({
+        previousSettings: previousSettings?.centerShape.spiralMotion ?? null,
+        nextSettings: settings.centerShape.spiralMotion,
+      })
     ) {
       this.statesByInstanceId.set(
         audioInstanceId,
@@ -140,6 +144,24 @@ export class SpiralMotionModule implements StageModule {
     })
   }
 
+  getInitialRingTransforms(
+    audioInstanceId: string,
+    origin: ShapeVector3,
+  ): SpiralMotionInstanceTransform[] {
+    const settings = this.audioSettingsByInstanceId.get(audioInstanceId)
+
+    if (!settings || !settings.centerShape.spiralMotion.enabled) {
+      return []
+    }
+
+    return getSpiralInitialRingTransforms({
+      origin,
+      settings: settings.centerShape.spiralMotion,
+      signal: this.routeSignalsByInstanceId.get(audioInstanceId) ?? null,
+      world: this.options.world,
+    })
+  }
+
   getSpawnCycleProgress(audioInstanceId: string) {
     const settings = this.audioSettingsByInstanceId.get(audioInstanceId)
 
@@ -151,6 +173,14 @@ export class SpiralMotionModule implements StageModule {
       settings.centerShape.spiralMotion,
       this.getState(audioInstanceId),
     )
+  }
+
+  resetRuntimeState(audioInstanceId: string) {
+    this.statesByInstanceId.set(
+      audioInstanceId,
+      createSpiralMotionRuntimeState(),
+    )
+    this.syncPath()
   }
 
   dispose() {

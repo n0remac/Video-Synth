@@ -21,11 +21,21 @@ import {
 } from "@/features/shapeGenerator/shapeGeneratorThree"
 import type { StageModule } from "@/features/stage/stageTypes"
 import type { SpiralMotionModule } from "../spiralMotion"
+import type { SpiralMotionInstanceTransform } from "../spiralMotion/spiralMotionTypes"
 import {
   getSpiralGeometryParameters,
   getSpiralGeometrySignature,
   getSpiralInstanceScale,
 } from "./centerShapeGeometryLogic"
+import {
+  advanceCenterShapeTransition,
+  createManualToSpiralTransition,
+  createSpiralToManualTransition,
+  getCenterShapeTransitionProgress,
+  getManualToSpiralTransitionTransforms,
+  getSpiralToManualTransitionTransforms,
+  type CenterShapePositionModeTransition,
+} from "./centerShapeTransitionLogic"
 
 type CenterShapeModuleOptions = {
   scene: THREE.Scene
@@ -298,6 +308,16 @@ export class CenterShapeModule implements StageModule {
     ContinuousMotionState
   >()
 
+  private positionModeTransitionsByInstanceId =
+    new Map<string, CenterShapePositionModeTransition>()
+
+  private completedPositionModeTransitions = new Set<string>()
+
+  private lastManualPositionByInstanceId = new Map<string, ShapeVector3>()
+
+  private lastSpiralTransformsByInstanceId =
+    new Map<string, SpiralMotionInstanceTransform[]>()
+
   private shapeObject: THREE.Object3D | null = null
 
   private spiralShapeBatch: SpiralShapeBatch | null = null
@@ -320,6 +340,7 @@ export class CenterShapeModule implements StageModule {
   }
 
   receiveAudioSettings(audioInstanceId: string, settings: AudioCircleSettings) {
+    const previousSettings = this.audioSettingsByInstanceId.get(audioInstanceId)
     const previousActiveAudioInstanceId = this.activeAudioInstanceId
 
     this.audioSettingsByInstanceId.set(audioInstanceId, settings)
@@ -336,12 +357,21 @@ export class CenterShapeModule implements StageModule {
       this.pruneContinuousMotion(settings.centerShape)
     }
 
+    this.startPositionModeTransition(
+      audioInstanceId,
+      previousSettings ?? null,
+      settings,
+    )
     this.syncShape()
   }
 
   removeAudioInstance(audioInstanceId: string) {
     this.audioSettingsByInstanceId.delete(audioInstanceId)
     this.routeSignalsByInstanceId.delete(audioInstanceId)
+    this.positionModeTransitionsByInstanceId.delete(audioInstanceId)
+    this.completedPositionModeTransitions.delete(audioInstanceId)
+    this.lastManualPositionByInstanceId.delete(audioInstanceId)
+    this.lastSpiralTransformsByInstanceId.delete(audioInstanceId)
 
     if (this.activeAudioInstanceId === audioInstanceId) {
       this.activeAudioInstanceId = this.getFirstEnabledAudioInstanceId()
@@ -373,11 +403,17 @@ export class CenterShapeModule implements StageModule {
     const usesSpiralMotion =
       settings.centerShape.positionMode === "spiral" &&
       settings.centerShape.spiralMotion.enabled
+    const transitionChanged = this.activeAudioInstanceId
+      ? this.updatePositionModeTransition(
+          this.activeAudioInstanceId,
+          dt,
+        )
+      : false
     const continuousMotionChanged = signal
       ? this.updateContinuousMotion(settings.centerShape, signal, dt)
       : false
 
-    if (continuousMotionChanged || usesSpiralMotion) {
+    if (continuousMotionChanged || usesSpiralMotion || transitionChanged) {
       this.syncShape()
     }
   }
@@ -483,9 +519,119 @@ export class CenterShapeModule implements StageModule {
     return changed
   }
 
+  private startPositionModeTransition(
+    audioInstanceId: string,
+    previousSettings: AudioCircleSettings | null,
+    settings: AudioCircleSettings,
+  ) {
+    if (!previousSettings) {
+      return
+    }
+
+    const previousShape = previousSettings.centerShape
+    const nextShape = settings.centerShape
+
+    if (previousShape.positionMode === nextShape.positionMode) {
+      return
+    }
+
+    this.completedPositionModeTransitions.delete(audioInstanceId)
+
+    if (
+      previousShape.positionMode === "manual" &&
+      nextShape.positionMode === "spiral" &&
+      nextShape.spiralMotion.enabled
+    ) {
+      const origin =
+        this.lastManualPositionByInstanceId.get(audioInstanceId) ??
+        previousShape.position
+
+      this.positionModeTransitionsByInstanceId.set(
+        audioInstanceId,
+        createManualToSpiralTransition({
+          audioInstanceId,
+          origin,
+          settings: nextShape.spiralMotion,
+        }),
+      )
+      return
+    }
+
+    if (
+      previousShape.positionMode === "spiral" &&
+      previousShape.spiralMotion.enabled &&
+      nextShape.positionMode === "manual"
+    ) {
+      const startTransforms =
+        this.lastSpiralTransformsByInstanceId.get(audioInstanceId) ?? []
+
+      if (startTransforms.length === 0) {
+        this.positionModeTransitionsByInstanceId.delete(audioInstanceId)
+        return
+      }
+
+      this.positionModeTransitionsByInstanceId.set(
+        audioInstanceId,
+        createSpiralToManualTransition({
+          audioInstanceId,
+          settings: previousShape.spiralMotion,
+          startTransforms,
+        }),
+      )
+      return
+    }
+
+    this.positionModeTransitionsByInstanceId.delete(audioInstanceId)
+  }
+
+  private updatePositionModeTransition(
+    audioInstanceId: string,
+    dt: number,
+  ) {
+    const transition =
+      this.positionModeTransitionsByInstanceId.get(audioInstanceId)
+
+    if (!transition) {
+      return false
+    }
+
+    if (this.completedPositionModeTransitions.has(audioInstanceId)) {
+      this.completedPositionModeTransitions.delete(audioInstanceId)
+      this.positionModeTransitionsByInstanceId.delete(audioInstanceId)
+      return true
+    }
+
+    const result = advanceCenterShapeTransition({
+      dt,
+      transition,
+    })
+
+    this.positionModeTransitionsByInstanceId.set(
+      audioInstanceId,
+      result.transition,
+    )
+
+    if (result.done) {
+      if (transition.direction === "spiral-to-manual") {
+        this.positionModeTransitionsByInstanceId.delete(audioInstanceId)
+        this.completedPositionModeTransitions.delete(audioInstanceId)
+        return true
+      }
+
+      this.completedPositionModeTransitions.add(audioInstanceId)
+
+      if (transition.direction === "manual-to-spiral") {
+        this.options.spiralMotion.resetRuntimeState(audioInstanceId)
+      }
+    }
+
+    return true
+  }
+
   private syncShape() {
-    const settings = this.activeAudioInstanceId
-      ? this.audioSettingsByInstanceId.get(this.activeAudioInstanceId)
+    const audioInstanceId = this.activeAudioInstanceId
+    const settings = audioInstanceId
+      ? this.audioSettingsByInstanceId.get(audioInstanceId)
       : null
 
     if (!settings?.centerShape.enabled) {
@@ -494,20 +640,53 @@ export class CenterShapeModule implements StageModule {
     }
 
     const signal =
-      this.routeSignalsByInstanceId.get(this.activeAudioInstanceId ?? "") ?? null
+      this.routeSignalsByInstanceId.get(audioInstanceId ?? "") ?? null
     const effectiveShape = getEffectiveShape(
       settings.centerShape,
       signal,
       this.getContinuousMotionOffsets(),
     )
+    const transition = audioInstanceId
+      ? this.positionModeTransitionsByInstanceId.get(audioInstanceId)
+      : null
+
+    if (audioInstanceId && transition) {
+      const progress = getCenterShapeTransitionProgress({
+        elapsedMs: transition.elapsedMs,
+        settings: transition.settings,
+      })
+      const transforms =
+        transition.direction === "manual-to-spiral"
+          ? getManualToSpiralTransitionTransforms({
+              progress,
+              targetTransforms: this.options.spiralMotion.getInitialRingTransforms(
+                audioInstanceId,
+                settings.centerShape.position,
+              ),
+              transition,
+            })
+          : getSpiralToManualTransitionTransforms({
+              progress,
+              targetOrigin: effectiveShape.position,
+              transition,
+            })
+
+      this.renderSpiralShapeTransforms({
+        audioInstanceId,
+        effectiveShape,
+        geometrySignature: getSpiralGeometrySignature(effectiveShape),
+        transforms,
+      })
+      return
+    }
 
     if (
       settings.centerShape.positionMode === "spiral" &&
       settings.centerShape.spiralMotion.enabled &&
-      this.activeAudioInstanceId
+      audioInstanceId
     ) {
       this.syncSpiralShapes({
-        audioInstanceId: this.activeAudioInstanceId,
+        audioInstanceId,
         effectiveShape,
         geometrySignature: getSpiralGeometrySignature(effectiveShape),
         origin: settings.centerShape.position,
@@ -515,6 +694,12 @@ export class CenterShapeModule implements StageModule {
       return
     }
 
+    if (audioInstanceId) {
+      this.lastManualPositionByInstanceId.set(
+        audioInstanceId,
+        effectiveShape.position,
+      )
+    }
     this.syncManualShape(effectiveShape, getManualGeometrySignature(effectiveShape))
   }
 
@@ -561,12 +746,32 @@ export class CenterShapeModule implements StageModule {
     geometrySignature: string
     origin: ShapeVector3
   }) {
-    this.clearManualShape()
-
     const transforms = this.options.spiralMotion.getInstanceTransforms(
       audioInstanceId,
       origin,
     )
+
+    this.renderSpiralShapeTransforms({
+      audioInstanceId,
+      effectiveShape,
+      geometrySignature,
+      transforms,
+    })
+  }
+
+  private renderSpiralShapeTransforms({
+    audioInstanceId,
+    effectiveShape,
+    geometrySignature,
+    transforms,
+  }: {
+    audioInstanceId: string
+    effectiveShape: EffectiveShape
+    geometrySignature: string
+    transforms: SpiralMotionInstanceTransform[]
+  }) {
+    this.clearManualShape()
+
     const batch = this.ensureSpiralShapeBatch(
       effectiveShape,
       geometrySignature,
@@ -609,6 +814,7 @@ export class CenterShapeModule implements StageModule {
     this.renderedGeometrySignature = geometrySignature
 
     this.renderedTransformSignature = ""
+    this.lastSpiralTransformsByInstanceId.set(audioInstanceId, transforms)
   }
 
   private ensureSpiralShapeBatch(

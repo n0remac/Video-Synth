@@ -168,6 +168,35 @@ function getPulseSyncedAdvanceRate({
   )
 }
 
+export function getSpiralMovementAdvanceMs({
+  dt,
+  fallbackToElapsed = false,
+  settings,
+  signal,
+}: {
+  dt: number
+  fallbackToElapsed?: boolean
+  settings: ShapeSpiralMotionSettings
+  signal: VisualCvRouteSignal | null
+}) {
+  const elapsedSeconds = Math.max(dt, 0)
+  const frequencyHz = Math.max(signal?.frequencyHz ?? 0, 0)
+  const pulseAdvanceMs =
+    elapsedSeconds *
+    millisecondsPerSecond *
+    getPulseSyncedAdvanceRate({
+      multiplier: getSpiralMoveRate(settings),
+      signal,
+      source: settings.moveSource ?? "syncSine",
+    })
+
+  if (!fallbackToElapsed || (signal && frequencyHz > 0)) {
+    return pulseAdvanceMs
+  }
+
+  return elapsedSeconds * millisecondsPerSecond
+}
+
 function getScreenRadii(
   world: SpiralMotionWorldSize,
   settings: ShapeSpiralMotionSettings,
@@ -240,14 +269,11 @@ export function updateSpiralMotionRuntimeState({
   const lastFrequencyHz =
     frequencyHz > 0 ? frequencyHz : state.lastFrequencyHz
   const pathDurationMs = getSpiralPathDurationMs(settings)
-  const moveAdvanceMs =
-    elapsedSeconds *
-    millisecondsPerSecond *
-    getPulseSyncedAdvanceRate({
-      multiplier: getSpiralMoveRate(settings),
-      signal,
-      source: settings.moveSource ?? "syncSine",
-    })
+  const moveAdvanceMs = getSpiralMovementAdvanceMs({
+    dt,
+    settings,
+    signal,
+  })
   let instances = state.instances
     .map((instance) => ({
       ...instance,
@@ -383,6 +409,54 @@ export function getSpiralInstanceTransforms({
       state,
       world,
     }),
+  )
+}
+
+export function getSpiralInitialRingTransforms({
+  origin,
+  settings,
+  signal,
+  world,
+}: {
+  origin: ShapeVector3
+  settings: ShapeSpiralMotionSettings
+  signal: VisualCvRouteSignal | null
+  world: SpiralMotionWorldSize
+}) {
+  const state = createSpiralMotionRuntimeState()
+  const { instances } = spawnRing({
+    accumulatedPulse: 0,
+    instances: [],
+    nextInstanceId: 1,
+    settings,
+  })
+
+  return instances.map((instance) =>
+    getSpiralInstanceTransform({
+      instance,
+      origin,
+      settings,
+      signal,
+      state,
+      world,
+    }),
+  )
+}
+
+export function shouldResetSpiralMotionRuntime({
+  nextSettings,
+  previousSettings,
+}: {
+  nextSettings: ShapeSpiralMotionSettings
+  previousSettings: ShapeSpiralMotionSettings | null
+}) {
+  if (!previousSettings) {
+    return true
+  }
+
+  return (
+    previousSettings.enabled !== nextSettings.enabled ||
+    getSpiralPathCount(previousSettings) !== getSpiralPathCount(nextSettings)
   )
 }
 
