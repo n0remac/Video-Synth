@@ -14,6 +14,9 @@ import type {
   UsersSnapshotMessage,
   UserUpdatedMessage,
   VisualizerMessage,
+  WledSyncSnapshotMessage,
+  WledSyncTestMessage,
+  WledSyncUpdateMessage,
 } from "./protocolTypes"
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -26,6 +29,54 @@ function isFiniteNumber(value: unknown): value is number {
 
 function isNormalized(value: unknown): value is number {
   return isFiniteNumber(value) && value >= 0 && value <= 1
+}
+
+function isIpv4Address(value: unknown) {
+  if (typeof value !== "string") {
+    return false
+  }
+
+  const parts = value.split(".")
+
+  return (
+    parts.length === 4 &&
+    parts.every(
+      (part) =>
+        /^(0|[1-9][0-9]{0,2})$/.test(part) &&
+        Number.parseInt(part, 10) <= 255,
+    )
+  )
+}
+
+function isWledSyncConfig(value: unknown) {
+  return (
+    isRecord(value) &&
+    (value.mode === "multicast" || value.mode === "unicast") &&
+    typeof value.unicastAddress === "string" &&
+    (value.mode === "multicast" || isIpv4Address(value.unicastAddress)) &&
+    isFiniteNumber(value.port) &&
+    Number.isInteger(value.port) &&
+    value.port >= 1 &&
+    value.port <= 65535 &&
+    isFiniteNumber(value.gain) &&
+    value.gain >= 0.1 &&
+    value.gain <= 6 &&
+    isNormalized(value.noiseFloor) &&
+    value.noiseFloor <= 0.5 &&
+    isNormalized(value.peakThreshold)
+  )
+}
+
+function isWledAudioFrame(value: unknown) {
+  return (
+    isRecord(value) &&
+    isNormalized(value.volume) &&
+    Array.isArray(value.bands) &&
+    value.bands.length === 16 &&
+    value.bands.every(isNormalized) &&
+    isFiniteNumber(value.dominantFrequencyHz) &&
+    value.dominantFrequencyHz >= 0
+  )
 }
 
 function isShapeFamily(value: unknown) {
@@ -327,17 +378,25 @@ function isTriggeredCircleVisualCvRouting(value: unknown) {
   )
 }
 
-function isAudioCircleSettings(value: unknown) {
+export function isAudioCircleSettings(value: unknown) {
   return (
     isRecord(value) &&
     isFiniteNumber(value.sampleStartPercent) &&
+    value.sampleStartPercent >= 0 &&
+    value.sampleStartPercent <= 100 &&
     isFiniteNumber(value.sampleEndPercent) &&
+    value.sampleEndPercent >= 0 &&
+    value.sampleEndPercent <= 100 &&
     (value.triggerMode === "manual" || value.triggerMode === "adaptive") &&
     isNormalized(value.triggerLevel) &&
     isNormalized(value.adaptiveSensitivity) &&
     isNormalized(value.adaptiveSpeed) &&
     isFiniteNumber(value.gain) &&
+    value.gain >= 0.1 &&
+    value.gain <= 6 &&
     isFiniteNumber(value.cooldownMs) &&
+    value.cooldownMs >= 50 &&
+    value.cooldownMs <= 1200 &&
     typeof value.circleColor === "string" &&
     typeof value.circleGrowOnRise === "boolean" &&
     typeof value.circleFadeOnFall === "boolean" &&
@@ -396,6 +455,7 @@ function isAudioAnalysisFrame(value: unknown) {
       isFiniteNumber(value.analysisRateHz)) &&
     (value.routes === undefined ||
       (Array.isArray(value.routes) && value.routes.every(isAudioRouteSignal))) &&
+    (value.wledAudio === undefined || isWledAudioFrame(value.wledAudio)) &&
     isFiniteNumber(value.timestamp)
   )
 }
@@ -409,8 +469,10 @@ export function isPointerMessage(value: unknown): value is PointerMessage {
       value.userRole === "controller" ||
       value.userRole === "color" ||
       value.userRole === "audio" ||
+      value.userRole === "audio-patches" ||
       value.userRole === "stage" ||
-      value.userRole === "songs") &&
+      value.userRole === "songs" ||
+      value.userRole === "wled") &&
     isNormalized(value.x) &&
     isNormalized(value.y) &&
     isFiniteNumber(value.vx) &&
@@ -421,6 +483,50 @@ export function isPointerMessage(value: unknown): value is PointerMessage {
     (value.visualMode === "circle" || value.visualMode === "line") &&
     isFiniteNumber(value.trailLineCount) &&
     isFiniteNumber(value.trailLength) &&
+    isFiniteNumber(value.timestamp)
+  )
+}
+
+export function isWledSyncUpdateMessage(
+  value: unknown,
+): value is WledSyncUpdateMessage {
+  return (
+    isRecord(value) &&
+    value.type === "wled_sync_update" &&
+    isWledSyncConfig(value.config) &&
+    typeof value.enabled === "boolean" &&
+    isFiniteNumber(value.timestamp)
+  )
+}
+
+export function isWledSyncTestMessage(
+  value: unknown,
+): value is WledSyncTestMessage {
+  return (
+    isRecord(value) &&
+    value.type === "wled_sync_test" &&
+    isFiniteNumber(value.timestamp)
+  )
+}
+
+export function isWledSyncSnapshotMessage(
+  value: unknown,
+): value is WledSyncSnapshotMessage {
+  return (
+    isRecord(value) &&
+    value.type === "wled_sync_snapshot" &&
+    isWledSyncConfig(value.config) &&
+    typeof value.enabled === "boolean" &&
+    typeof value.sending === "boolean" &&
+    (value.activeSource === null ||
+      value.activeSource === "microphone" ||
+      value.activeSource === "song" ||
+      value.activeSource === "test") &&
+    isFiniteNumber(value.packetCount) &&
+    value.packetCount >= 0 &&
+    (value.lastSendAt === null ||
+      (isFiniteNumber(value.lastSendAt) && value.lastSendAt >= 0)) &&
+    (value.lastError === null || typeof value.lastError === "string") &&
     isFiniteNumber(value.timestamp)
   )
 }
@@ -599,8 +705,10 @@ export function isUserJoinedMessage(value: unknown): value is UserJoinedMessage 
       value.role === "controller" ||
       value.role === "color" ||
       value.role === "audio" ||
+      value.role === "audio-patches" ||
       value.role === "stage" ||
-      value.role === "songs") &&
+      value.role === "songs" ||
+      value.role === "wled") &&
     isFiniteNumber(value.timestamp)
   )
 }
@@ -650,6 +758,9 @@ export function parseVisualizerMessage(
   if (
     isPointerMessage(value) ||
     isStageAudioFrameMessage(value) ||
+    isWledSyncUpdateMessage(value) ||
+    isWledSyncTestMessage(value) ||
+    isWledSyncSnapshotMessage(value) ||
     isAudioSettingsSnapshotMessage(value) ||
     isAudioSettingsUpdateMessage(value) ||
     isAudioInstancesSnapshotMessage(value) ||

@@ -308,6 +308,21 @@ test("parses audio settings delete messages", () => {
   assert.equal(message?.audioInstanceId, "audio-1")
 })
 
+test("parses audio patch page client roles", () => {
+  const message = parseVisualizerMessage(
+    JSON.stringify({
+      type: "user_joined",
+      userId: "user-1",
+      color: "#00d1ff",
+      role: "audio-patches",
+      timestamp: 1000,
+    }),
+  )
+
+  assert.equal(message?.type, "user_joined")
+  assert.equal(message?.role, "audio-patches")
+})
+
 test("parses audio worklet frames with route signals", () => {
   const message = parseVisualizerMessage(
     JSON.stringify({
@@ -322,6 +337,11 @@ test("parses audio worklet frames with route signals", () => {
         source: "audio-worklet",
         sequence: 7,
         analysisRateHz: 60,
+        wledAudio: {
+          volume: 0.25,
+          bands: Array.from({ length: 16 }, () => 0.4),
+          dominantFrequencyHz: 440,
+        },
         routes: [
           {
             audioInstanceId: "audio-1",
@@ -348,6 +368,7 @@ test("parses audio worklet frames with route signals", () => {
   assert.equal(message?.type, "stage_audio_frame")
   assert.equal(message?.frame.source, "audio-worklet")
   assert.equal(message?.frame.routes?.[0]?.triggered, true)
+  assert.equal(message?.frame.wledAudio?.bands.length, 16)
 })
 
 test("parses song audio frames", () => {
@@ -373,6 +394,110 @@ test("parses song audio frames", () => {
 
   assert.equal(message?.type, "stage_audio_frame")
   assert.equal(message?.frame.source, "song")
+})
+
+test("parses WLED sync updates, tests, and snapshots", () => {
+  const config = {
+    mode: "multicast",
+    unicastAddress: "192.168.1.50",
+    port: 11988,
+    gain: 1,
+    noiseFloor: 0.02,
+    peakThreshold: 0.7,
+  }
+  const update = parseVisualizerMessage(
+    JSON.stringify({
+      type: "wled_sync_update",
+      config,
+      enabled: true,
+      timestamp: 1000,
+    }),
+  )
+  const testMessage = parseVisualizerMessage(
+    JSON.stringify({
+      type: "wled_sync_test",
+      timestamp: 1001,
+    }),
+  )
+  const snapshot = parseVisualizerMessage(
+    JSON.stringify({
+      type: "wled_sync_snapshot",
+      config,
+      enabled: true,
+      sending: true,
+      activeSource: "song",
+      packetCount: 20,
+      lastSendAt: 1002,
+      lastError: null,
+      timestamp: 1003,
+    }),
+  )
+
+  assert.equal(update?.type, "wled_sync_update")
+  assert.equal(testMessage?.type, "wled_sync_test")
+  assert.equal(snapshot?.type, "wled_sync_snapshot")
+  assert.equal(snapshot?.activeSource, "song")
+})
+
+test("allows multicast WLED config without a unicast fallback address", () => {
+  const message = parseVisualizerMessage(
+    JSON.stringify({
+      type: "wled_sync_update",
+      config: {
+        mode: "multicast",
+        unicastAddress: "",
+        port: 11988,
+        gain: 1,
+        noiseFloor: 0.02,
+        peakThreshold: 0.7,
+      },
+      enabled: true,
+      timestamp: 1000,
+    }),
+  )
+
+  assert.equal(message?.type, "wled_sync_update")
+})
+
+test("rejects malformed WLED addresses and non-16-band audio frames", () => {
+  const invalidUpdate = parseVisualizerMessage(
+    JSON.stringify({
+      type: "wled_sync_update",
+      config: {
+        mode: "unicast",
+        unicastAddress: "999.1.1.1",
+        port: 11988,
+        gain: 1,
+        noiseFloor: 0.02,
+        peakThreshold: 0.7,
+      },
+      enabled: true,
+      timestamp: 1000,
+    }),
+  )
+  const invalidFrame = parseVisualizerMessage(
+    JSON.stringify({
+      type: "stage_audio_frame",
+      frame: {
+        volume: 0.2,
+        low: 0.3,
+        mid: 0.4,
+        high: 0.5,
+        dominantBin: 12,
+        spectrum: [0.1, 0.2, 0.3],
+        wledAudio: {
+          volume: 0.25,
+          bands: Array.from({ length: 15 }, () => 0.4),
+          dominantFrequencyHz: 440,
+        },
+        timestamp: 1000,
+      },
+      timestamp: 1001,
+    }),
+  )
+
+  assert.equal(invalidUpdate, null)
+  assert.equal(invalidFrame, null)
 })
 
 test("parses song commands", () => {

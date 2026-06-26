@@ -1590,6 +1590,17 @@ export function AudioControllerView({ audioInstanceId }: AudioControllerViewProp
         </label>
         <button
           type="button"
+          className="audio-patches-link-button"
+          onClick={() =>
+            router.push(
+              `/audio-controller/patches?target=${encodeURIComponent(audioInstanceId)}`,
+            )
+          }
+        >
+          Patches
+        </button>
+        <button
+          type="button"
           className="audio-delete-button"
           disabled={pendingDeletedAudioInstanceId === audioInstanceId}
           onClick={deleteCurrentAudioController}

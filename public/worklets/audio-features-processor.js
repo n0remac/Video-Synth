@@ -4,6 +4,24 @@ const analysisRateHz = 60
 const displayMinDb = -90
 const displayMaxDb = -25
 const spectrumSmoothing = 0.82
+const wledFrequencyRangesHz = [
+  [43, 86],
+  [86, 129],
+  [129, 216],
+  [216, 301],
+  [301, 430],
+  [430, 560],
+  [560, 818],
+  [818, 1076],
+  [1076, 1421],
+  [1421, 1895],
+  [1895, 2412],
+  [2412, 3187],
+  [3187, 4210],
+  [4210, 5598],
+  [5598, 7106],
+  [7106, 8828],
+]
 const levelMotionOptions = {
   fastSpeed: 0.48,
   slowSpeed: 0.07,
@@ -35,6 +53,79 @@ function averageRange(values, startRatio, endRatio) {
   }
 
   return total / Math.max(Math.min(end, values.length) - start, 1)
+}
+
+function calculateRms(values) {
+  if (values.length === 0) {
+    return 0
+  }
+
+  let sumSquares = 0
+
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values[index] || 0
+    sumSquares += value * value
+  }
+
+  return clamp(Math.sqrt(sumSquares / values.length), 0, 1)
+}
+
+function normalizeFftMagnitude(magnitude) {
+  const scaledMagnitude = magnitude / (fftSize / 2)
+  const db = 20 * Math.log10(scaledMagnitude + 0.00000001)
+
+  return clamp(
+    (db - displayMinDb) / (displayMaxDb - displayMinDb),
+    0,
+    1,
+  )
+}
+
+function createWledAudioFeatures(real, imag, rmsVolume) {
+  const binCount = Math.min(fftSize / 2, real.length, imag.length)
+  let dominantIndex = 0
+  let dominantMagnitude = 0
+  const magnitudes = new Float32Array(binCount)
+
+  for (let index = 1; index < binCount; index += 1) {
+    const magnitude = Math.hypot(real[index] || 0, imag[index] || 0)
+    magnitudes[index] = magnitude
+
+    if (magnitude > dominantMagnitude) {
+      dominantMagnitude = magnitude
+      dominantIndex = index
+    }
+  }
+
+  const bands = wledFrequencyRangesHz.map(
+    ([minimumHz, maximumHz], bandIndex) => {
+      let total = 0
+      let samples = 0
+
+      for (let index = 1; index < binCount; index += 1) {
+        const frequencyHz = (index * sampleRate) / fftSize
+        const insideBand =
+          frequencyHz >= minimumHz &&
+          (bandIndex === wledFrequencyRangesHz.length - 1
+            ? frequencyHz <= maximumHz
+            : frequencyHz < maximumHz)
+
+        if (insideBand) {
+          total += normalizeFftMagnitude(magnitudes[index] || 0)
+          samples += 1
+        }
+      }
+
+      return samples > 0 ? clamp(total / samples, 0, 1) : 0
+    },
+  )
+
+  return {
+    volume: clamp(rmsVolume, 0, 1),
+    bands,
+    dominantFrequencyHz:
+      dominantIndex > 0 ? (dominantIndex * sampleRate) / fftSize : 0,
+  }
 }
 
 function sampleSpectrumRange(spectrum, startPercent, endPercent) {
@@ -340,8 +431,14 @@ class SignalPaintAudioProcessor extends AudioWorkletProcessor {
   }
 
   analyze() {
+    const rmsVolume = calculateRms(this.ringBuffer)
     this.copyWindow()
     fft(this.real, this.imag)
+    const wledAudio = createWledAudioFeatures(
+      this.real,
+      this.imag,
+      rmsVolume,
+    )
 
     const spectrumResult = normalizeSpectrumBins(
       this.real,
@@ -433,6 +530,7 @@ class SignalPaintAudioProcessor extends AudioWorkletProcessor {
         sequence: this.sequence,
         analysisRateHz,
         routes,
+        wledAudio,
         timestamp,
       },
       triggers,

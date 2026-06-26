@@ -1,4 +1,8 @@
 import type { AudioAnalysisFrame } from "./audioAnalyserTypes"
+import {
+  calculateRms,
+  createWledAudioFromByteFrequencyData,
+} from "./wledAudioFeatures.ts"
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
@@ -57,6 +61,11 @@ export function createAudioAnalysisFrame(
   frequencyData: Uint8Array,
   timestamp: number,
   bucketCount = 64,
+  wledOptions?: {
+    fftSize: number
+    sampleRate: number
+    timeDomainData: Float32Array
+  },
 ): AudioAnalysisFrame {
   return {
     volume: averageRange(frequencyData, 0, 1),
@@ -65,6 +74,14 @@ export function createAudioAnalysisFrame(
     high: averageRange(frequencyData, 0.48, 1),
     dominantBin: getDominantBin(frequencyData),
     spectrum: normalizeSpectrum(frequencyData, bucketCount),
+    wledAudio: wledOptions
+      ? createWledAudioFromByteFrequencyData({
+          fftSize: wledOptions.fftSize,
+          frequencyData,
+          rmsVolume: calculateRms(wledOptions.timeDomainData),
+          sampleRate: wledOptions.sampleRate,
+        })
+      : undefined,
     timestamp,
   }
 }

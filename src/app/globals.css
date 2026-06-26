@@ -337,10 +337,13 @@ canvas {
   bottom: 16px;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
+  max-width: min(760px, calc(100vw - 32px));
 }
 
-.stage-audio-control button {
+.stage-audio-control button,
+.stage-audio-control select {
   min-height: 44px;
   border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 8px;
@@ -349,6 +352,17 @@ canvas {
   padding: 0 16px;
   font-weight: 800;
   text-transform: uppercase;
+}
+
+.stage-audio-control select {
+  width: min(320px, calc(100vw - 32px));
+  color: rgba(255, 255, 255, 0.86);
+  background: rgba(0, 0, 0, 0.72);
+  text-transform: none;
+}
+
+.stage-audio-control select:disabled {
+  opacity: 0.68;
 }
 
 .stage-audio-control button[data-active="true"] {
@@ -368,6 +382,12 @@ canvas {
   font-size: 0.78rem;
   font-weight: 800;
   text-transform: uppercase;
+}
+
+.stage-audio-control span[data-status="error"] {
+  max-width: min(420px, calc(100vw - 32px));
+  color: #ff9b9b;
+  text-transform: none;
 }
 
 .shape-generator-shell {
@@ -454,6 +474,14 @@ canvas {
   grid-template-rows: auto auto auto minmax(280px, 1fr) auto auto auto auto;
 }
 
+.audio-patches-shell {
+  grid-template-rows: auto auto auto auto minmax(320px, 1fr);
+}
+
+.wled-shell {
+  grid-template-rows: auto auto auto auto auto;
+}
+
 .controller-nav {
   display: flex;
   gap: 8px;
@@ -479,6 +507,126 @@ canvas {
 .controller-nav a[data-active="true"] {
   color: #050505;
   background: #00d1ff;
+}
+
+.wled-status-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.wled-status-grid div {
+  min-height: 64px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.wled-status-grid span {
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.wled-status-grid strong {
+  color: #ffffff;
+  font-size: 0.92rem;
+  text-transform: uppercase;
+}
+
+.wled-panel {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.wled-panel > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.wled-panel h2 {
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.wled-actions,
+.wled-test-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.wled-enable-button,
+.wled-secondary-button {
+  min-height: 44px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 0 16px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.wled-enable-button[data-active="true"] {
+  color: #050505;
+  background: #3cff9e;
+}
+
+.wled-enable-button:disabled,
+.wled-secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.wled-config-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.wled-text-input {
+  width: 100%;
+  height: 44px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  color: #ffffff;
+  background: #101014;
+  font: inherit;
+}
+
+.wled-text-input[aria-invalid="true"] {
+  border-color: #ff8f3c;
+}
+
+.wled-test-row p {
+  flex: 1 1 340px;
+  margin: 0;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.86rem;
+}
+
+.wled-setup-panel ol {
+  margin: 0;
+  padding-left: 22px;
+  color: rgba(255, 255, 255, 0.74);
+  line-height: 1.7;
 }
 
 .controller-header {
@@ -647,11 +795,12 @@ canvas {
 
 .audio-instance-panel {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
   gap: 12px;
   align-items: end;
 }
 
+.audio-patches-link-button,
 .audio-delete-button {
   min-height: 44px;
   border: 1px solid rgba(255, 45, 117, 0.36);
@@ -663,8 +812,184 @@ canvas {
   text-transform: uppercase;
 }
 
+.audio-patches-link-button {
+  border-color: rgba(0, 209, 255, 0.42);
+  background: rgba(0, 209, 255, 0.14);
+}
+
+.audio-patches-link-button:hover {
+  background: rgba(0, 209, 255, 0.26);
+}
+
 .audio-delete-button:hover {
   background: rgba(255, 45, 117, 0.28);
+}
+
+.audio-patch-toolbar {
+  display: grid;
+  grid-template-columns:
+    minmax(180px, 1fr)
+    minmax(180px, 1fr)
+    minmax(160px, 0.8fr)
+    auto
+    auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.audio-patch-action {
+  min-height: 44px;
+  border: 1px solid rgba(60, 255, 158, 0.38);
+  border-radius: 8px;
+  color: #050505;
+  background: #3cff9e;
+  padding: 0 16px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.audio-patch-action.secondary {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.audio-patch-action:disabled,
+.audio-patch-button:disabled,
+.audio-patch-delete:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.audio-patch-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(120px, 1fr));
+  gap: 12px;
+}
+
+.audio-patch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 12px;
+  align-content: start;
+}
+
+.audio-patch-card {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  display: grid;
+  grid-template-rows: minmax(128px, 1fr) auto;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.audio-patch-card[data-active="true"] {
+  border-color: rgba(60, 255, 158, 0.76);
+  box-shadow: inset 0 0 0 1px rgba(60, 255, 158, 0.16);
+}
+
+.audio-patch-card[data-fading="true"] {
+  border-color: rgba(255, 225, 86, 0.82);
+  box-shadow: 0 0 26px rgba(255, 225, 86, 0.12);
+}
+
+.audio-patch-button {
+  border: 0;
+  display: grid;
+  align-content: space-between;
+  gap: 10px;
+  min-height: 128px;
+  padding: 14px;
+  color: #ffffff;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.12), transparent 52%),
+    rgba(0, 209, 255, 0.14);
+  text-align: left;
+}
+
+.audio-patch-card[data-tone="green"] .audio-patch-button {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.12), transparent 52%),
+    rgba(60, 255, 158, 0.14);
+}
+
+.audio-patch-card[data-tone="yellow"] .audio-patch-button {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.12), transparent 52%),
+    rgba(255, 225, 86, 0.14);
+}
+
+.audio-patch-card[data-tone="pink"] .audio-patch-button {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.12), transparent 52%),
+    rgba(255, 45, 117, 0.14);
+}
+
+.audio-patch-card[data-tone="violet"] .audio-patch-button {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.12), transparent 52%),
+    rgba(185, 103, 255, 0.14);
+}
+
+.audio-patch-card[data-tone="orange"] .audio-patch-button {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.12), transparent 52%),
+    rgba(255, 143, 60, 0.14);
+}
+
+.audio-patch-button span {
+  overflow-wrap: anywhere;
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.audio-patch-button strong {
+  justify-self: start;
+  border-radius: 8px;
+  padding: 5px 8px;
+  color: #050505;
+  background: rgba(247, 247, 255, 0.82);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.audio-patch-button small {
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.audio-patch-delete {
+  min-height: 38px;
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.76);
+  background: rgba(255, 45, 117, 0.12);
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.audio-patch-delete:hover {
+  color: #ffffff;
+  background: rgba(255, 45, 117, 0.24);
+}
+
+.audio-patch-empty {
+  grid-column: 1 / -1;
+  min-height: 140px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.045);
+  font-size: 0.9rem;
+  font-weight: 850;
+  text-transform: uppercase;
 }
 
 .audio-control-panel {
@@ -1384,6 +1709,18 @@ canvas {
   background: transparent;
 }
 
+.control-field input[type="text"] {
+  width: 100%;
+  height: 44px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  color: #ffffff;
+  background: #101014;
+  font: inherit;
+}
+
 .control-field input[type="range"] {
   width: 100%;
   height: 44px;
@@ -1438,9 +1775,13 @@ canvas {
     grid-template-rows: auto auto auto minmax(320px, 1fr) auto auto auto;
   }
 
+  .audio-patches-shell {
+    grid-template-rows: auto auto auto auto minmax(320px, 1fr);
+  }
+
   .controller-nav {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(3, 1fr);
   }
 
   .controller-nav a {
@@ -1470,6 +1811,19 @@ canvas {
 
   .audio-instance-panel {
     grid-template-columns: 1fr;
+  }
+
+  .audio-patch-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .audio-patch-toolbar .control-field:first-child,
+  .audio-patch-toolbar .control-field:nth-child(2) {
+    grid-column: span 2;
+  }
+
+  .audio-patch-status-grid {
+    grid-template-columns: 1fr 1fr;
   }
 
   .audio-simple-panel {
@@ -1519,5 +1873,21 @@ canvas {
   .shape-control-panel {
     grid-template-columns: 1fr 1fr;
     max-height: min(58vh, 420px);
+  }
+
+  .wled-status-grid,
+  .wled-config-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .wled-panel > header {
+    display: grid;
+  }
+}
+
+@media (max-width: 480px) {
+  .wled-status-grid,
+  .wled-config-grid {
+    grid-template-columns: 1fr;
   }
 }

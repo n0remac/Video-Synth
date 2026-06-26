@@ -18,10 +18,16 @@ test("normalizes frequency data into spectrum buckets", () => {
 })
 
 test("creates an audio analysis frame with normalized bands", () => {
+  const timeDomainData = Float32Array.from([0.5, -0.5, 0.5, -0.5])
   const frame = createAudioAnalysisFrame(
     Uint8Array.from([0, 0, 255, 255, 128, 32, 0, 0]),
     123,
     4,
+    {
+      fftSize: 16,
+      sampleRate: 16000,
+      timeDomainData,
+    },
   )
 
   assert.equal(frame.timestamp, 123)
@@ -29,4 +35,6 @@ test("creates an audio analysis frame with normalized bands", () => {
   assert.equal(frame.spectrum.length, 4)
   assert.ok(frame.volume > 0)
   assert.ok(frame.mid > frame.high)
+  assert.equal(frame.wledAudio?.bands.length, 16)
+  assert.equal(frame.wledAudio?.volume, 0.5)
 })

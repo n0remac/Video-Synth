@@ -227,6 +227,7 @@ export function useStageRuntime() {
         sequence: songSequenceRef.current,
         analysisRateHz: analysis.analysisRateHz,
         routes,
+        wledAudio: analysisFrame.wledAudio,
         timestamp: timeMs,
       }
 

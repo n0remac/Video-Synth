@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect } from "react"
+import { useAudioInputDevices } from "@/features/audio/useAudioInputDevices"
 import { useAudioAnalyser } from "@/features/audio/useAudioAnalyser"
 import { useStageRuntime } from "./useStageRuntime"
 
@@ -17,6 +18,7 @@ export function StageView() {
     routes: audioRoutes,
     onFrame: sendAudioFrame,
   })
+  const audioInputDevices = useAudioInputDevices()
 
   useEffect(() => {
     if (songTransport.state === "playing" && audio.running) {
@@ -24,14 +26,17 @@ export function StageView() {
     }
   }, [audio, songTransport.state])
 
-  function toggleMicrophone() {
+  async function toggleLiveInput() {
     if (audio.running) {
       audio.stop()
       return
     }
 
     stopSong()
-    void audio.start()
+    await audio.start({
+      deviceId: audioInputDevices.selectedDeviceId || undefined,
+    })
+    void audioInputDevices.refresh()
   }
 
   return (
@@ -43,12 +48,30 @@ export function StageView() {
       <div className="stage-audio-control">
         <button
           type="button"
-          onClick={toggleMicrophone}
+          onClick={() => void toggleLiveInput()}
           data-active={audio.running}
         >
-          {audio.running ? "Stop Audio" : "Start Audio"}
+          {audio.running ? "Stop Live Input" : "Start Live Input"}
         </button>
+        <select
+          aria-label="Live audio input device"
+          value={audioInputDevices.selectedDeviceId}
+          disabled={audio.running || audioInputDevices.status === "not-supported"}
+          onChange={(event) => {
+            audioInputDevices.setSelectedDeviceId(event.target.value)
+          }}
+        >
+          {audioInputDevices.deviceOptions.map((device) => (
+            <option key={device.deviceId || "system-default"} value={device.deviceId}>
+              {device.label}
+            </option>
+          ))}
+        </select>
         <span data-status={audio.status}>{audio.status}</span>
+        {audio.error ? <span data-status="error">{audio.error}</span> : null}
+        {audioInputDevices.error ? (
+          <span data-status="error">{audioInputDevices.error}</span>
+        ) : null}
         <span data-status={songTransport.state}>
           song {songTransport.state}
         </span>

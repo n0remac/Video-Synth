@@ -26,6 +26,9 @@ export function ControllerNav() {
       <Link href="/songs" data-active={pathname === "/songs"}>
         Songs
       </Link>
+      <Link href="/wled" data-active={pathname === "/wled"}>
+        WLED
+      </Link>
       <Link href="/stage" data-active={pathname === "/stage"}>
         Stage
       </Link>

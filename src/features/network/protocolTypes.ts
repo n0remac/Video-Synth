@@ -9,8 +9,10 @@ export type VisualizerClientRole =
   | "controller"
   | "color"
   | "audio"
+  | "audio-patches"
   | "stage"
   | "songs"
+  | "wled"
 
 export type PointerMessage = {
   type: "pointer"
@@ -66,6 +68,29 @@ export type AudioRouteSignal = {
   triggered: boolean
 }
 
+export type WledAudioFrame = {
+  volume: number
+  bands: [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ]
+  dominantFrequencyHz: number
+}
+
 export type AudioAnalysisFrame = {
   volume: number
   low: number
@@ -77,12 +102,48 @@ export type AudioAnalysisFrame = {
   sequence?: number
   analysisRateHz?: number
   routes?: AudioRouteSignal[]
+  wledAudio?: WledAudioFrame
   timestamp: number
 }
 
 export type StageAudioFrameMessage = {
   type: "stage_audio_frame"
   frame: AudioAnalysisFrame
+  timestamp: number
+}
+
+export type WledSyncMode = "multicast" | "unicast"
+
+export type WledSyncConfig = {
+  mode: WledSyncMode
+  unicastAddress: string
+  port: number
+  gain: number
+  noiseFloor: number
+  peakThreshold: number
+}
+
+export type WledSyncUpdateMessage = {
+  type: "wled_sync_update"
+  config: WledSyncConfig
+  enabled: boolean
+  timestamp: number
+}
+
+export type WledSyncTestMessage = {
+  type: "wled_sync_test"
+  timestamp: number
+}
+
+export type WledSyncSnapshotMessage = {
+  type: "wled_sync_snapshot"
+  config: WledSyncConfig
+  enabled: boolean
+  sending: boolean
+  activeSource: "microphone" | "song" | "test" | null
+  packetCount: number
+  lastSendAt: number | null
+  lastError: string | null
   timestamp: number
 }
 
@@ -221,6 +282,9 @@ export type PatchChangedMessage = {
 export type VisualizerMessage =
   | PointerMessage
   | StageAudioFrameMessage
+  | WledSyncUpdateMessage
+  | WledSyncTestMessage
+  | WledSyncSnapshotMessage
   | AudioSettingsSnapshotMessage
   | AudioSettingsUpdateMessage
   | AudioInstancesSnapshotMessage

@@ -2,6 +2,11 @@ import { createServer } from "node:http"
 import next from "next"
 import { WebSocketServer } from "ws"
 import { normalizeAudioInstanceId } from "./src/server/audioInstanceIds.mjs"
+import {
+  createWledSyncRuntime,
+  isWledAudioFrame,
+  isWledSyncConfig,
+} from "./src/server/wledSync.mjs"
 
 const dev = process.env.NODE_ENV !== "production"
 const hostname = process.env.HOSTNAME ?? "0.0.0.0"
@@ -21,7 +26,15 @@ const userColors = [
   "#f7f7ff",
 ]
 
-const clientRoles = new Set(["controller", "color", "audio", "stage", "songs"])
+const clientRoles = new Set([
+  "controller",
+  "color",
+  "audio",
+  "audio-patches",
+  "stage",
+  "songs",
+  "wled",
+])
 
 const shapeParameterNames = [
   "angleBias",
@@ -411,7 +424,8 @@ function isPointerMessage(message) {
       message.userRole === "color" ||
       message.userRole === "audio" ||
       message.userRole === "stage" ||
-      message.userRole === "songs") &&
+      message.userRole === "songs" ||
+      message.userRole === "wled") &&
     isFiniteNumber(message.x) &&
     isFiniteNumber(message.y) &&
     isFiniteNumber(message.vx) &&
@@ -612,6 +626,7 @@ function isAudioAnalysisFrame(frame) {
             isNormalized(route.fallRate) &&
             typeof route.triggered === "boolean",
         ))) &&
+    (frame.wledAudio === undefined || isWledAudioFrame(frame.wledAudio)) &&
     isFiniteNumber(frame.timestamp)
   )
 }
@@ -621,6 +636,24 @@ function isStageAudioFrameMessage(message) {
     message &&
     message.type === "stage_audio_frame" &&
     isAudioAnalysisFrame(message.frame) &&
+    isFiniteNumber(message.timestamp)
+  )
+}
+
+function isWledSyncUpdateMessage(message) {
+  return (
+    message &&
+    message.type === "wled_sync_update" &&
+    isWledSyncConfig(message.config) &&
+    typeof message.enabled === "boolean" &&
+    isFiniteNumber(message.timestamp)
+  )
+}
+
+function isWledSyncTestMessage(message) {
+  return (
+    message &&
+    message.type === "wled_sync_test" &&
     isFiniteNumber(message.timestamp)
   )
 }
@@ -737,7 +770,8 @@ function isSongTransportUpdateMessage(message) {
   )
 }
 
-app.prepare().then(() => {
+app.prepare().then(async () => {
+  const wledSync = await createWledSyncRuntime()
   const server = createServer((request, response) => {
     handle(request, response)
   })
@@ -796,7 +830,20 @@ app.prepare().then(() => {
     const payload = JSON.stringify(message)
 
     for (const [client, connectedUser] of clients) {
-      if (client.readyState === 1 && connectedUser.role === "audio") {
+      if (
+        client.readyState === 1 &&
+        (connectedUser.role === "audio" || connectedUser.role === "audio-patches")
+      ) {
+        client.send(payload)
+      }
+    }
+  }
+
+  function broadcastToAudioPatchClients(message) {
+    const payload = JSON.stringify(message)
+
+    for (const [client, connectedUser] of clients) {
+      if (client.readyState === 1 && connectedUser.role === "audio-patches") {
         client.send(payload)
       }
     }
@@ -817,6 +864,26 @@ app.prepare().then(() => {
 
     for (const [client, connectedUser] of clients) {
       if (client.readyState === 1 && connectedUser.role === "songs") {
+        client.send(payload)
+      }
+    }
+  }
+
+  function broadcastToWledClients(message) {
+    const payload = JSON.stringify(message)
+
+    for (const [client, connectedUser] of clients) {
+      if (client.readyState === 1 && connectedUser.role === "wled") {
+        client.send(payload)
+      }
+    }
+  }
+
+  function broadcastStageAudioFrame(message) {
+    const payload = JSON.stringify(message)
+
+    for (const [client, connectedUser] of clients) {
+      if (client.readyState === 1 && connectedUser.role !== "wled") {
         client.send(payload)
       }
     }
@@ -897,10 +964,22 @@ app.prepare().then(() => {
       broadcastAudioInstancesSnapshot()
     }
 
+    if (role === "audio-patches") {
+      sendAudioInstancesSnapshot(socket)
+
+      for (const audioInstanceId of audioCircleSettingsByInstance.keys()) {
+        sendAudioSettingsSnapshot(socket, audioInstanceId)
+      }
+    }
+
     if (role === "stage") {
       for (const audioInstanceId of audioCircleSettingsByInstance.keys()) {
         sendAudioSettingsSnapshot(socket, audioInstanceId)
       }
+    }
+
+    if (role === "wled") {
+      socket.send(JSON.stringify(wledSync.getSnapshot()))
     }
 
     if (role === "controller" || role === "audio") {
@@ -930,7 +1009,27 @@ app.prepare().then(() => {
       }
 
       if (role === "stage" && isStageAudioFrameMessage(message)) {
-        broadcast({ ...message, timestamp: now() })
+        wledSync.receiveFrame(user.id, message.frame, now())
+        broadcastStageAudioFrame({ ...message, timestamp: now() })
+        return
+      }
+
+      if (role === "wled" && isWledSyncUpdateMessage(message)) {
+        void wledSync
+          .update(message.config, message.enabled)
+          .then((snapshot) => {
+            broadcastToWledClients(snapshot)
+          })
+          .catch((error) => {
+            console.error("Unable to update WLED sync configuration:", error)
+            broadcastToWledClients(wledSync.getSnapshot())
+          })
+        return
+      }
+
+      if (role === "wled" && isWledSyncTestMessage(message)) {
+        wledSync.startTest()
+        broadcastToWledClients(wledSync.getSnapshot())
         return
       }
 
@@ -945,29 +1044,30 @@ app.prepare().then(() => {
       }
 
       if (
-        role === "audio" &&
+        (role === "audio" || role === "audio-patches") &&
         isAudioSettingsUpdateMessage(message) &&
-        normalizeAudioInstanceId(message.audioInstanceId) === user.audioInstanceId
+        (role === "audio"
+          ? normalizeAudioInstanceId(message.audioInstanceId) === user.audioInstanceId
+          : normalizeAudioInstanceId(message.audioInstanceId) ===
+            message.audioInstanceId)
       ) {
+        const targetAudioInstanceId =
+          role === "audio" ? user.audioInstanceId : message.audioInstanceId
         const audioCircleState = setAudioCircleSettings(
-          user.audioInstanceId,
+          targetAudioInstanceId,
           message.settings,
         )
+        const updateMessage = {
+          type: "audio_settings_update",
+          userId: user.id,
+          audioInstanceId: targetAudioInstanceId,
+          settings: audioCircleState.settings,
+          timestamp: audioCircleState.updatedAt,
+        }
 
-        broadcastToAudioInstance(user.audioInstanceId, {
-          type: "audio_settings_update",
-          userId: user.id,
-          audioInstanceId: user.audioInstanceId,
-          settings: audioCircleState.settings,
-          timestamp: audioCircleState.updatedAt,
-        })
-        broadcastToStages({
-          type: "audio_settings_update",
-          userId: user.id,
-          audioInstanceId: user.audioInstanceId,
-          settings: audioCircleState.settings,
-          timestamp: audioCircleState.updatedAt,
-        })
+        broadcastToAudioInstance(targetAudioInstanceId, updateMessage)
+        broadcastToAudioPatchClients(updateMessage)
+        broadcastToStages(updateMessage)
         broadcastAudioInstancesSnapshot()
         return
       }
@@ -999,6 +1099,9 @@ app.prepare().then(() => {
 
     socket.on("close", () => {
       clients.delete(socket)
+      if (role === "stage") {
+        wledSync.removeStage(user.id)
+      }
       if (role === "controller" || role === "audio") {
         broadcast({
           type: "user_left",
@@ -1008,6 +1111,32 @@ app.prepare().then(() => {
       }
     })
   })
+
+  const wledStatusInterval = setInterval(() => {
+    broadcastToWledClients(wledSync.getSnapshot())
+  }, 250)
+  let shuttingDown = false
+
+  function shutdown() {
+    if (shuttingDown) {
+      return
+    }
+
+    shuttingDown = true
+    clearInterval(wledStatusInterval)
+    wledSync.close()
+    for (const client of clients.keys()) {
+      client.terminate()
+    }
+    wss.close()
+    server.close(() => {
+      process.exit(0)
+    })
+    setTimeout(() => process.exit(0), 1000).unref()
+  }
+
+  process.once("SIGINT", shutdown)
+  process.once("SIGTERM", shutdown)
 
   server.listen(port, hostname, () => {
     console.log(`Signal Paint listening at http://${hostname}:${port}`)

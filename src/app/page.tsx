@@ -12,6 +12,7 @@ export default function HomePage() {
           <Link href="/color-controller">Open color</Link>
           <Link href="/audio-controller">Open audio</Link>
           <Link href="/songs">Open songs</Link>
+          <Link href="/wled">Open WLED sync</Link>
           <Link href="/shape-generator">Open shapes</Link>
         </nav>
       </section>

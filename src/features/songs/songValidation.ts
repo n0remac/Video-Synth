@@ -1,9 +1,12 @@
-import type { SongAnalysis, SongMetadata } from "./songTypes"
+import {
+  songAnalysisBucketCount,
+  songAnalysisFftSize,
+  songAnalysisRateHz,
+  songAnalysisVersion,
+  type SongAnalysis,
+  type SongMetadata,
+} from "./songTypes.ts"
 
-const songAnalysisVersion = 1
-const songAnalysisFftSize = 2048
-const songAnalysisRateHz = 60
-const songAnalysisBucketCount = 64
 
 export function isSongId(value: unknown): value is string {
   return (
@@ -99,7 +102,12 @@ export function isSongAnalysis(value: unknown): value is SongAnalysis {
         isNormalized(frame.high) &&
         isFiniteNumber(frame.dominantBin) &&
         isNormalizedArray(frame.spectrum, songAnalysisBucketCount) &&
-        isNormalizedArray(frame.controlSpectrum, songAnalysisBucketCount),
+        isNormalizedArray(frame.controlSpectrum, songAnalysisBucketCount) &&
+        isRecord(frame.wledAudio) &&
+        isNormalized(frame.wledAudio.volume) &&
+        isNormalizedArray(frame.wledAudio.bands, 16) &&
+        isFiniteNumber(frame.wledAudio.dominantFrequencyHz) &&
+        frame.wledAudio.dominantFrequencyHz >= 0,
     )
   )
 }

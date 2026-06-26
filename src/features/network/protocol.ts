@@ -7,6 +7,8 @@ import type {
   SongTransportUpdateMessage,
   StageAudioFrameMessage,
   VisualizerClientRole,
+  WledSyncTestMessage,
+  WledSyncUpdateMessage,
 } from "./protocolTypes"
 
 export function createPointerMessage(input: PointerMessage): PointerMessage {
@@ -74,6 +76,26 @@ export function createStageAudioFrameMessage(
   return {
     type: "stage_audio_frame",
     frame: input.frame,
+    timestamp: input.timestamp,
+  }
+}
+
+export function createWledSyncUpdateMessage(
+  input: WledSyncUpdateMessage,
+): WledSyncUpdateMessage {
+  return {
+    type: "wled_sync_update",
+    config: input.config,
+    enabled: input.enabled,
+    timestamp: input.timestamp,
+  }
+}
+
+export function createWledSyncTestMessage(
+  input: WledSyncTestMessage,
+): WledSyncTestMessage {
+  return {
+    type: "wled_sync_test",
     timestamp: input.timestamp,
   }
 }

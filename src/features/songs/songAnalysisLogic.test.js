@@ -17,10 +17,11 @@ test("analyzes silence into normalized frames", () => {
     durationMs: 1000,
   })
 
-  assert.equal(analysis.version, 1)
+  assert.equal(analysis.version, 2)
   assert.equal(analysis.frames.length > 0, true)
   assert.equal(analysis.frames[0].spectrum.length, 64)
   assert.equal(analysis.frames[0].controlSpectrum.length, 64)
+  assert.equal(analysis.frames[0].wledAudio.bands.length, 16)
   assert.equal(analysis.frames.every((frame) => frame.volume >= 0), true)
 })
 
@@ -42,11 +43,19 @@ test("analyzes a generated tone with non-zero spectrum energy", () => {
 
   assert.equal(analysis.normalization.volumePeak > 0, true)
   assert.equal(analysis.frames.some((frame) => frame.dominantBin > 0), true)
+  assert.equal(
+    analysis.frames.some(
+      (frame) =>
+        Math.abs(frame.wledAudio.dominantFrequencyHz - 440) < 30 &&
+        frame.wledAudio.bands.indexOf(Math.max(...frame.wledAudio.bands)) === 5,
+    ),
+    true,
+  )
 })
 
 test("finds frames and lookahead values on the analysis timeline", () => {
   const analysis = {
-    version: 1,
+    version: 2,
     songId: "song_1",
     durationMs: 300,
     sampleRate: 1000,
@@ -72,6 +81,11 @@ test("finds frames and lookahead values on the analysis timeline", () => {
         dominantBin: 0,
         spectrum: [0.1, 0.2],
         controlSpectrum: [0.2, 0.4],
+        wledAudio: {
+          volume: 0.1,
+          bands: Array.from({ length: 16 }, () => 0.1),
+          dominantFrequencyHz: 100,
+        },
       },
       {
         timeMs: 100,
@@ -82,6 +96,11 @@ test("finds frames and lookahead values on the analysis timeline", () => {
         dominantBin: 1,
         spectrum: [0.7, 0.9],
         controlSpectrum: [0.6, 0.8],
+        wledAudio: {
+          volume: 0.8,
+          bands: Array.from({ length: 16 }, () => 0.8),
+          dominantFrequencyHz: 200,
+        },
       },
     ],
   }

@@ -18,11 +18,16 @@ test("validates saved song analysis shape", () => {
     dominantBin: 0,
     spectrum: Array.from({ length: 64 }, () => 0),
     controlSpectrum: Array.from({ length: 64 }, () => 0),
+    wledAudio: {
+      volume: 0,
+      bands: Array.from({ length: 16 }, () => 0),
+      dominantFrequencyHz: 0,
+    },
   }
 
   assert.equal(
     isSongAnalysis({
-      version: 1,
+      version: 2,
       songId: "song_1",
       durationMs: 1000,
       sampleRate: 44100,
@@ -41,5 +46,16 @@ test("validates saved song analysis shape", () => {
       frames: [frame],
     }),
     true,
+  )
+})
+
+test("rejects stale v1 song analysis so it must be rescanned", () => {
+  assert.equal(
+    isSongAnalysis({
+      version: 1,
+      songId: "song_1",
+      frames: [],
+    }),
+    false,
   )
 })

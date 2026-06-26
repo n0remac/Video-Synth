@@ -16,6 +16,9 @@ import type {
   SongTransportUpdateMessage,
   VisualizerClientRole,
   VisualizerUserSummary,
+  WledSyncSnapshotMessage,
+  WledSyncTestMessage,
+  WledSyncUpdateMessage,
 } from "@/features/network/protocolTypes"
 
 type SocketStatus = "connecting" | "connected" | "disconnected"
@@ -39,11 +42,16 @@ export function useVisualizerSocket(
   const [users, setUsers] = useState<VisualizerUserSummary[]>([])
   const [audioSettings, setAudioSettings] =
     useState<AudioCircleSettings | null>(null)
+  const [audioSettingsByInstance, setAudioSettingsByInstance] = useState<
+    Record<string, AudioCircleSettings>
+  >({})
   const [audioInstances, setAudioInstances] = useState<AudioInstanceSummary[]>([])
   const [stageAudioFrame, setStageAudioFrame] =
     useState<AudioAnalysisFrame | null>(null)
   const [songTransport, setSongTransport] =
     useState<SongTransportUpdateMessage | null>(null)
+  const [wledSync, setWledSync] =
+    useState<WledSyncSnapshotMessage | null>(null)
 
   useEffect(() => {
     onStageAudioFrameRef.current = options.onStageAudioFrame
@@ -111,12 +119,22 @@ export function useVisualizerSocket(
       }
 
       if (message?.type === "audio_settings_snapshot") {
+        setAudioSettingsByInstance((currentSettings) => ({
+          ...currentSettings,
+          [message.audioInstanceId]: message.settings,
+        }))
+
         if (message.audioInstanceId === audioInstanceId) {
           setAudioSettings(message.settings)
         }
       }
 
       if (message?.type === "audio_settings_update") {
+        setAudioSettingsByInstance((currentSettings) => ({
+          ...currentSettings,
+          [message.audioInstanceId]: message.settings,
+        }))
+
         if (message.audioInstanceId === audioInstanceId) {
           setAudioSettings(message.settings)
         }
@@ -132,6 +150,13 @@ export function useVisualizerSocket(
             (instance) => instance.audioInstanceId !== message.audioInstanceId,
           ),
         )
+        setAudioSettingsByInstance((currentSettings) => {
+          const nextSettings = { ...currentSettings }
+
+          delete nextSettings[message.audioInstanceId]
+
+          return nextSettings
+        })
 
         if (message.audioInstanceId === audioInstanceId) {
           setAudioSettings(null)
@@ -153,6 +178,10 @@ export function useVisualizerSocket(
 
       if (message?.type === "song_transport_update") {
         setSongTransport(message)
+      }
+
+      if (message?.type === "wled_sync_snapshot") {
+        setWledSync(message)
       }
 
       if (message?.type === "user_left") {
@@ -240,6 +269,29 @@ export function useVisualizerSocket(
     socket.send(JSON.stringify(message))
   }, [])
 
+  const sendWledSyncUpdate = useCallback(
+    (message: WledSyncUpdateMessage) => {
+      const socket = socketRef.current
+
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        return
+      }
+
+      socket.send(JSON.stringify(message))
+    },
+    [],
+  )
+
+  const sendWledSyncTest = useCallback((message: WledSyncTestMessage) => {
+    const socket = socketRef.current
+
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return
+    }
+
+    socket.send(JSON.stringify(message))
+  }, [])
+
   return {
     status,
     connected: status === "connected",
@@ -247,14 +299,18 @@ export function useVisualizerSocket(
     assignedColor,
     users,
     audioSettings,
+    audioSettingsByInstance,
     audioInstances,
     stageAudioFrame,
     songTransport,
+    wledSync,
     sendPointer,
     sendColorControl,
     sendAudioSettingsUpdate,
     sendAudioSettingsDelete,
     sendSongCommand,
+    sendWledSyncUpdate,
+    sendWledSyncTest,
     clearStage,
   }
 }

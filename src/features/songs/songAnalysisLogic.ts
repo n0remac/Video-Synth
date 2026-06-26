@@ -3,11 +3,17 @@ import type {
   SongAnalysisFrame,
   SongPeakBand,
 } from "./songTypes"
+import {
+  songAnalysisBucketCount,
+  songAnalysisFftSize,
+  songAnalysisRateHz,
+  songAnalysisVersion,
+} from "./songTypes.ts"
+import {
+  calculateRms,
+  createWledAudioFromComplexSpectrum,
+} from "../audio/wledAudioFeatures.ts"
 
-const songAnalysisVersion = 1
-const songAnalysisFftSize = 2048
-const songAnalysisRateHz = 60
-const songAnalysisBucketCount = 64
 const displayMinDb = -90
 const displayMaxDb = -25
 const spectrumSmoothing = 0.82
@@ -184,8 +190,13 @@ export function analyzeMonoSamples({
     startSample + songAnalysisFftSize <= samples.length;
     startSample += hopSize
   ) {
+    const timeDomainSamples = new Float32Array(songAnalysisFftSize)
+
     for (let index = 0; index < songAnalysisFftSize; index += 1) {
-      real[index] = (samples[startSample + index] ?? 0) * (window[index] ?? 0)
+      const sample = samples[startSample + index] ?? 0
+
+      timeDomainSamples[index] = sample
+      real[index] = sample * (window[index] ?? 0)
       imag[index] = 0
     }
 
@@ -208,6 +219,13 @@ export function analyzeMonoSamples({
       dominantBin: getDominantBin(spectrum),
       spectrum,
       controlSpectrum,
+      wledAudio: createWledAudioFromComplexSpectrum({
+        fftSize: songAnalysisFftSize,
+        imag,
+        real,
+        rmsVolume: calculateRms(timeDomainSamples),
+        sampleRate,
+      }),
     }
 
     volumePeak = Math.max(volumePeak, frame.volume)
@@ -218,7 +236,7 @@ export function analyzeMonoSamples({
   }
 
   return {
-    version: songAnalysisVersion as 1,
+    version: songAnalysisVersion,
     songId,
     durationMs,
     sampleRate,

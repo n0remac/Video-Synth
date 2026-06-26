@@ -1,4 +1,12 @@
-import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
+import {
+  mkdir,
+  open,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises"
 import path from "node:path"
 import {
   isAudioMimeType,
@@ -8,6 +16,7 @@ import {
 } from "./songValidation"
 import {
   maxSongUploadBytes,
+  songAnalysisVersion,
   type SongAnalysis,
   type SongMetadata,
   type SongSummary,
@@ -65,9 +74,7 @@ export async function listSongs(): Promise<SongSummary[]> {
 
     try {
       const metadata = await readSongMetadata(entry.name)
-      const hasAnalysis = await stat(getAnalysisPath(entry.name))
-        .then((value) => value.isFile())
-        .catch(() => false)
+      const hasAnalysis = await hasCurrentSongAnalysis(entry.name)
 
       songs.push({ ...metadata, hasAnalysis })
     } catch {
@@ -76,6 +83,25 @@ export async function listSongs(): Promise<SongSummary[]> {
   }
 
   return songs.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+}
+
+async function hasCurrentSongAnalysis(songId: string) {
+  let file
+
+  try {
+    file = await open(getAnalysisPath(songId), "r")
+    const buffer = Buffer.alloc(128)
+    const { bytesRead } = await file.read(buffer, 0, buffer.length, 0)
+    const prefix = buffer.toString("utf8", 0, bytesRead)
+
+    return new RegExp(`"version"\\s*:\\s*${songAnalysisVersion}\\b`).test(
+      prefix,
+    )
+  } catch {
+    return false
+  } finally {
+    await file?.close()
+  }
 }
 
 export async function readSongMetadata(songId: string): Promise<SongMetadata> {

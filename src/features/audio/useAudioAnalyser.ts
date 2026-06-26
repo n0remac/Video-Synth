@@ -43,6 +43,10 @@ type UseAudioAnalyserOptions = {
   onTrigger?(event: AudioWorkletTriggerEvent): void
 }
 
+type StartAudioAnalyserOptions = {
+  deviceId?: string
+}
+
 export function useAudioAnalyser(options: UseAudioAnalyserOptions = {}) {
   const audioContextRef = useRef<AudioContext | null>(null)
   const analyserRef = useRef<AnalyserNode | null>(null)
@@ -105,7 +109,9 @@ export function useAudioAnalyser(options: UseAudioAnalyserOptions = {}) {
     setStatus("idle")
   }, [])
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (
+    startOptions: StartAudioAnalyserOptions = {},
+  ) => {
     const AudioContextConstructor =
       window.AudioContext ??
       (window as WindowWithWebkitAudio).webkitAudioContext
@@ -120,12 +126,19 @@ export function useAudioAnalyser(options: UseAudioAnalyserOptions = {}) {
       setError(null)
       setStatus("requesting")
 
+      const audioConstraints: MediaTrackConstraints = {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      }
+
+      if (startOptions.deviceId) {
+        audioConstraints.deviceId = { exact: startOptions.deviceId }
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        },
+        audio: audioConstraints,
+        video: false,
       })
       const audioContext = new AudioContextConstructor()
       const source = audioContext.createMediaStreamSource(stream)
@@ -174,6 +187,7 @@ export function useAudioAnalyser(options: UseAudioAnalyserOptions = {}) {
 
       const analyser = audioContext.createAnalyser()
       const frequencyData = new Uint8Array(analyser.frequencyBinCount)
+      const timeDomainData = new Float32Array(analyser.fftSize)
 
       analyser.fftSize = 2048
       analyser.smoothingTimeConstant = 0.82
@@ -182,8 +196,18 @@ export function useAudioAnalyser(options: UseAudioAnalyserOptions = {}) {
 
       function tick() {
         analyser.getByteFrequencyData(frequencyData)
+        analyser.getFloatTimeDomainData(timeDomainData)
         const timestamp = performance.now()
-        const baseFrame = createAudioAnalysisFrame(frequencyData, timestamp)
+        const baseFrame = createAudioAnalysisFrame(
+          frequencyData,
+          timestamp,
+          64,
+          {
+            fftSize: analyser.fftSize,
+            sampleRate: audioContext.sampleRate,
+            timeDomainData,
+          },
+        )
         const routeSignals = routesRef.current.map((route) => {
           const rawLevel = sampleSpectrumRange(
             baseFrame.spectrum,

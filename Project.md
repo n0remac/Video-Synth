@@ -61,6 +61,7 @@ so visuals and audio share the stage tab's playback clock.
 | `/api/songs/[songId]` | route handlers | Deletes a saved song. |
 | `/api/songs/[songId]/audio` | route handlers | Streams saved song audio with byte-range support for seeking. |
 | `/api/songs/[songId]/analysis` | route handlers | Reads and writes precomputed song analysis JSON. |
+| `/wled` | `WledSyncView` | WLED audio-sync destination, tuning, test signal, and output status. |
 | `/ws` | `server.mjs` | WebSocket endpoint for stages and controllers. |
 
 ## Server Modules
@@ -72,7 +73,8 @@ HTTP server, and attaches a `ws` WebSocket server at `/ws`.
 
 Responsibilities:
 
-- Assign client roles: `controller`, `color`, `audio`, `stage`, or `songs`.
+- Assign client roles: `controller`, `color`, `audio`, `stage`, `songs`, or
+  `wled`.
 - Assign user ids and rotating user colors.
 - Maintain connected-client state in memory.
 - Validate incoming pointer, color, audio settings, song transport, audio frame,
@@ -84,6 +86,8 @@ Responsibilities:
   matching audio controllers plus all stages.
 - Route song load/play/pause/seek/stop commands from the songs page to stages and
   song transport updates from stages back to songs pages.
+- Convert stage audio frames into WLED V2 audio-sync UDP packets and send them by
+  multicast or direct unicast.
 
 ### `src/server/audioInstanceIds.mjs`
 
@@ -122,6 +126,20 @@ Defines the WebSocket message contract shared by the app:
 - Song transport commands and updates.
 - User join/leave/snapshot messages.
 - Clear-stage and patch-changed messages.
+- WLED sync configuration, test, and status messages.
+
+## WLED Sync
+
+`src/server/wledSync.mjs` owns the Node-only UDP socket, WLED V2 packet packing,
+signal conditioning, source selection, stale-audio clearing, synthetic test
+signal, and persisted destination settings. Browser audio and song analysis add
+an optional 16-band `wledAudio` payload to normal stage audio frames; the browser
+never sends UDP directly.
+
+The `/wled` operator page connects with the `wled` WebSocket role. It can switch
+between standard multicast `239.0.0.1:11988` and an explicit device IPv4
+address. Configuration persists in `data/wled/config.json`; enabled state does
+not persist across server restarts.
 
 ### `src/features/network/protocol.ts`
 
@@ -143,9 +161,9 @@ modules in an animation loop.
 ### `src/features/stage/StageView.tsx`
 
 React view for `/stage`. It renders the fullscreen canvas, connection status, the
-stage microphone start/stop button, and compact song transport status. It wires
-`useStageRuntime()` to `useAudioAnalyser()` and stops song playback before
-starting microphone analysis.
+stage live audio input selector/start/stop controls, and compact song transport
+status. It wires `useStageRuntime()` to `useAudioAnalyser()` and stops song
+playback before starting live input analysis.
 
 ### `src/features/stage/useStageRuntime.ts`
 
@@ -331,9 +349,13 @@ of audio frames for all controllers.
 
 Files:
 
-- `useAudioAnalyser.ts`: starts/stops microphone capture, prefers
+- `useAudioAnalyser.ts`: starts/stops selected live audio input capture, prefers
   `AudioWorkletNode`, falls back to `AnalyserNode`, emits analysis frames, and
   invokes route trigger callbacks.
+- `useAudioInputDevices.ts`: enumerates browser audio input devices, tracks the
+  selected live input, refreshes on device changes, and persists the selection.
+- `audioInputDevices.ts`: pure helpers for normalizing audio input device
+  options and resolving saved selections.
 - `audioAnalyserLogic.ts`: pure helpers for dominant-bin detection, spectrum
   bucketing, band averages, and analysis-frame construction.
 - `audioAnalyserTypes.ts`: analyser status and frame exports.

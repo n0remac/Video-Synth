@@ -2,6 +2,8 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import {
   createAudioSettingsUpdateMessage,
+  createWledSyncTestMessage,
+  createWledSyncUpdateMessage,
   getVisualizerSocketUrl,
 } from "./protocol.ts"
 
@@ -159,4 +161,70 @@ test("adds audio instance ids to audio websocket urls", () => {
       })
     }
   }
+})
+
+test("creates audio patch websocket urls", () => {
+  const originalWindow = globalThis.window
+
+  Object.defineProperty(globalThis, "window", {
+    configurable: true,
+    value: {
+      location: {
+        protocol: "http:",
+        host: "localhost:3000",
+      },
+    },
+  })
+
+  try {
+    assert.equal(
+      getVisualizerSocketUrl("audio-patches"),
+      "ws://localhost:3000/ws?role=audio-patches",
+    )
+  } finally {
+    if (originalWindow === undefined) {
+      delete globalThis.window
+    } else {
+      Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: originalWindow,
+      })
+    }
+  }
+})
+
+test("creates WLED sync control messages", () => {
+  const config = {
+    mode: "unicast",
+    unicastAddress: "192.168.1.50",
+    port: 11988,
+    gain: 1.2,
+    noiseFloor: 0.02,
+    peakThreshold: 0.7,
+  }
+
+  assert.deepEqual(
+    createWledSyncUpdateMessage({
+      type: "wled_sync_update",
+      config,
+      enabled: true,
+      timestamp: 1000,
+    }),
+    {
+      type: "wled_sync_update",
+      config,
+      enabled: true,
+      timestamp: 1000,
+    },
+  )
+  assert.deepEqual(
+    createWledSyncTestMessage({
+      type: "wled_sync_test",
+      timestamp: 1001,
+    }),
+    {
+      type: "wled_sync_test",
+      timestamp: 1001,
+    },
+  )
 })

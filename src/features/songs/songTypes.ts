@@ -1,4 +1,6 @@
-export const songAnalysisVersion = 1
+import type { WledAudioFrame } from "@/features/network/protocolTypes"
+
+export const songAnalysisVersion = 2
 export const songAnalysisFftSize = 2048
 export const songAnalysisRateHz = 60
 export const songAnalysisBucketCount = 64
@@ -35,10 +37,11 @@ export type SongAnalysisFrame = {
   dominantBin: number
   spectrum: number[]
   controlSpectrum: number[]
+  wledAudio: WledAudioFrame
 }
 
 export type SongAnalysis = {
-  version: 1
+  version: 2
   songId: string
   durationMs: number
   sampleRate: number
