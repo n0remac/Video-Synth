@@ -155,16 +155,27 @@ export function getManualToSpiralTransitionTransforms({
   transition: ManualToSpiralTransition
 }): SpiralMotionInstanceTransform[] {
   const easedProgress = smoothstep(progress)
+  const totalPhaseAdvanceDegrees =
+    getDirectionSign(transition.settings.direction) *
+    transition.settings.degreesPerPulse *
+    (getSpiralPathDurationMs(transition.settings) / 1000)
 
-  return targetTransforms.map((transform) => ({
-    ...transform,
-    position: lerpVector3(
-      transition.origin,
-      transform.position,
-      easedProgress,
-    ),
-    progress,
-  }))
+  return targetTransforms.map((transform) => {
+    const position = getSpiralExpandPosition({
+      progress: easedProgress,
+      targetPosition: transform.position,
+      totalPhaseAdvanceRadians: toRadians(totalPhaseAdvanceDegrees),
+      origin: transition.origin,
+    })
+    const remainingPhaseDegrees = totalPhaseAdvanceDegrees * (1 - easedProgress)
+
+    return {
+      ...transform,
+      phaseDegrees: transform.phaseDegrees - remainingPhaseDegrees,
+      position,
+      progress,
+    }
+  })
 }
 
 export function getSpiralToManualTransitionTransforms({
@@ -224,5 +235,30 @@ function getSpiralCollapsePosition({
     x: targetOrigin.x + Math.cos(angle) * radius,
     y: targetOrigin.y + Math.sin(angle) * radius,
     z: lerp(point.from.z, targetOrigin.z, progress),
+  }
+}
+
+function getSpiralExpandPosition({
+  origin,
+  progress,
+  targetPosition,
+  totalPhaseAdvanceRadians,
+}: {
+  origin: ShapeVector3
+  progress: number
+  targetPosition: ShapeVector3
+  totalPhaseAdvanceRadians: number
+}) {
+  const targetOffsetX = targetPosition.x - origin.x
+  const targetOffsetY = targetPosition.y - origin.y
+  const targetRadius = Math.hypot(targetOffsetX, targetOffsetY)
+  const targetAngle = Math.atan2(targetOffsetY, targetOffsetX)
+  const angle = targetAngle - totalPhaseAdvanceRadians * (1 - progress)
+  const radius = targetRadius * progress
+
+  return {
+    x: origin.x + Math.cos(angle) * radius,
+    y: origin.y + Math.sin(angle) * radius,
+    z: lerp(origin.z, targetPosition.z, progress),
   }
 }

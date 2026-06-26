@@ -69,7 +69,7 @@ test("center shape transition completes without depending on modulation level", 
   assert.equal(result.done, true)
 })
 
-test("manual to spiral transition uses live target transforms while moving outward", () => {
+test("manual to spiral transition uses live target transforms while spiraling outward", () => {
   const transition = createManualToSpiralTransition({
     audioInstanceId: "audio-1",
     origin: { x: 0, y: 0, z: 0 },
@@ -103,10 +103,16 @@ test("manual to spiral transition uses live target transforms while moving outwa
   })[0]
 
   assert.deepEqual(start.position, { x: 0, y: 0, z: 0 })
-  assertClose(middle.position.x, 0.3125)
-  assertClose(middle.position.y, 0.15625)
+  assertClose(
+    Math.hypot(middle.position.x, middle.position.y),
+    Math.hypot(2, 1) * 0.15625,
+  )
+  assert.notEqual(middle.position.x, 0.3125)
+  assert.notEqual(middle.position.y, 0.15625)
   assertClose(middle.position.z, -0.15625)
-  assert.deepEqual(end.position, { x: 2, y: 1, z: -1 })
+  assertClose(end.position.x, 2)
+  assertClose(end.position.y, 1)
+  assertClose(end.position.z, -1)
 })
 
 test("spiral to manual transition spirals captured shapes inward", () => {
